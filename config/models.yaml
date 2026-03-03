@@ -1,0 +1,11 @@
+# LLM model configuration for each pipeline stage
+# The ADK agent uses Gemini Flash as its base model.
+# Individual tools can call different models if needed.
+
+agent:
+  model: "gemini-2.0-flash"
+  purpose: "ADK root agent — orchestrates the pipeline via tool calls"
+
+# Note: SQL generation is NOT an LLM call.
+# Looker MCP generates SQL deterministically from {model, explore, fields, filters}.
+# This eliminates 60-70% of typical NL2SQL token cost.

@@ -1,0 +1,26 @@
+# Taxonomy Entry Template
+# Copy this file, rename to <term_name>.yaml, and fill in all fields.
+# Required fields: canonical_name, definition
+# Run validation: python -m src.taxonomy.schema validate taxonomy/finance/
+
+canonical_name: ""          # The ONE canonical name for this concept
+definition: ""              # Precise, unambiguous definition (2-3 sentences)
+formula: ""                 # How this metric is calculated (if applicable)
+synonyms: []                # ALL other names people use for this concept
+  # - "Acronym"
+  # - "Team-specific name"
+  # - "Common misspelling"
+domain:                     # Business domains this belongs to
+  - ""                      # e.g. "Marketing", "Finance", "Risk"
+owner: ""                   # Data steward name + team
+column_mappings:            # Physical BigQuery columns
+  - table: ""               # BigQuery table name
+    column: ""              # Column name
+    dataset: ""             # BigQuery dataset
+lookml_target:              # Where this maps in LookML
+  model: ""                 # e.g. "finance"
+  explore: ""               # e.g. "transactions"
+  field: ""                 # e.g. "transactions.total_amount"
+related_terms: []           # Other taxonomy entries this relates to
+filters: []                 # Required filters (e.g. "partition_date")
+status: "draft"             # draft | review | approved

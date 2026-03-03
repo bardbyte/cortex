@@ -1,0 +1,13 @@
+{
+  "id": "GQ-fin-XXX",
+  "natural_language": "What was total spend by merchant category last quarter?",
+  "model": "finance",
+  "explore": "transactions",
+  "dimensions": ["merchants.category_name"],
+  "measures": ["transactions.total_amount"],
+  "filters": {"transactions.partition_date": "last quarter"},
+  "complexity": "moderate",
+  "domain": "spending_analysis",
+  "validated": false,
+  "validated_by": ""
+}

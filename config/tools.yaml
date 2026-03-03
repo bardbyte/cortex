@@ -1,0 +1,43 @@
+# MCP Toolbox configuration for Looker
+# Reference: https://googleapis.github.io/genai-toolbox/resources/tools/looker/
+#
+# This configures the MCP Toolbox binary to expose Looker API as MCP tools.
+# Run with: ./toolbox --tools-file config/tools.yaml
+#
+# Environment variables are resolved at runtime from .env
+
+sources:
+  looker:
+    kind: looker
+    base_url: ${LOOKER_INSTANCE_URL}
+    client_id: ${LOOKER_CLIENT_ID}
+    client_secret: ${LOOKER_CLIENT_SECRET}
+    verify_ssl: true
+    timeout: 120s
+
+# Toolsets group tools for different use cases.
+# Cortex uses "data-exploration" for the core pipeline.
+# Other toolsets are available for debugging and development.
+
+toolsets:
+  # Core tools for data exploration and querying (used by Cortex pipeline)
+  data-exploration:
+    - get-models
+    - get-explores
+    - get-dimensions
+    - get-measures
+    - get-filters
+    - get-parameters
+    - query
+    - query-sql
+
+  # Tools for working with saved content
+  saved-contents:
+    - run-look
+    - get-dashboards
+
+  # Tools for LookML project exploration
+  lookml-projects:
+    - get-projects
+    - get-project-files
+    - get-project-file

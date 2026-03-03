@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+dist/
+build/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment & Secrets
+.env
+.env.local
+config.yml
+*.pem
+credentials*.json
+service-account*.json
+
+# MCP Toolbox binary (downloaded at setup)
+toolbox
+
+# Evaluation output
+eval_results/
+
+# Generated LookML (from taxonomy pipeline)
+generated_lookml/
+
+# Notebooks
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# PoC reference (not part of Cortex)
+access_llm/
+
+# Cache
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/

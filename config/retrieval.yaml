@@ -1,0 +1,31 @@
+# Retrieval configuration
+# These values are tunable — adjust based on evaluation results.
+
+fusion:
+  weights:
+    vector: 1.0       # Semantic similarity (Vertex AI Search)
+    graph: 1.5         # Structural validity (Neo4j) — highest weight
+    fewshot: 1.2       # Proven patterns (FAISS golden queries)
+  rrf_k: 60            # RRF smoothing constant (standard value)
+  top_n_fuse: 30       # Candidates to consider after fusion
+
+vector_search:
+  top_k: 20            # Results per entity from Vertex AI Search
+  embedding_model: "text-embedding-005"
+  embedding_dim: 768
+
+graph_search:
+  max_join_depth: 3    # Max hops for join path traversal
+
+fewshot:
+  top_k: 5             # Golden queries to retrieve per search
+
+thresholds:
+  proceed_min_coverage: 0.5       # Minimum field coverage to proceed
+  disambiguate_score_ratio: 0.8   # If #2 score > 0.8 * #1 score, disambiguate
+  semantic_cache_threshold: 0.95  # Cosine similarity for cache hit
+
+caching:
+  exact_match_ttl_seconds: 900    # 15 minutes
+  semantic_cache_ttl_seconds: 3600 # 1 hour
+  metadata_cache_ttl_seconds: 300  # 5 minutes
