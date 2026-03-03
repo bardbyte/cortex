@@ -21,11 +21,12 @@ echo "=== Setting up Cortex GitHub project management ==="
 echo "Creating labels..."
 
 gh label create "retrieval"     --color "1d76db" --description "Hybrid retrieval system (vector + graph + fewshot)" --force
-gh label create "pipeline"      --color "0e8a16" --description "LangGraph orchestration pipeline" --force
+gh label create "pipeline"      --color "0e8a16" --description "ADK agent orchestration pipeline" --force
 gh label create "taxonomy"      --color "d93f0b" --description "Business term taxonomy + LookML generation" --force
 gh label create "evaluation"    --color "fbca04" --description "Golden dataset + accuracy measurement" --force
 gh label create "deployment"    --color "5319e7" --description "GKE, infrastructure, CI/CD" --force
-gh label create "connector"     --color "006b75" --description "Looker MCP, BigQuery, ChatGPT connectors" --force
+gh label create "connector"     --color "006b75" --description "Looker MCP, BigQuery, LLM access connectors" --force
+gh label create "ui"            --color "c2e0c6" --description "UI components" --force
 gh label create "P0-critical"   --color "b60205" --description "Blocks May deadline" --force
 gh label create "P1-important"  --color "e99695" --description "Important but not blocking" --force
 gh label create "P2-nice"       --color "c5def5" --description "Nice to have" --force
@@ -58,6 +59,138 @@ gh api repos/{owner}/{repo}/milestones -f title="M4: Production Ready" \
 echo "Creating issues..."
 
 # ──── MILESTONE 1: Prove the Loop (Weeks 1-3) ────
+
+gh issue create \
+  --title "Set up LLM access pathway (SafeChain + CIBIS)" \
+  --label "connector,P0-critical" \
+  --milestone "M1: Prove the Loop" \
+  --assignee "bardbyte" \
+  --body "$(cat <<'EOF'
+## Objective
+Set up the SafeChain LLM access pathway so the pipeline can call Gemini through Amex auth.
+
+## Deliverables
+- [ ] Implement `src/connectors/safechain_client.py` — bridge SafeChain → ADK BaseLlm
+- [ ] Add CIBIS credentials to `.env.example` once validated
+- [ ] Add safechain + ee_config + langchain-core==0.3.83 to dependencies
+- [ ] Update `examples/verify_setup.py` with SafeChain + LLM checks
+- [ ] Document the setup in README
+
+## Context
+All LLM access at Amex routes through SafeChain (CIBIS authentication). The PoC in `access_llm/`
+demonstrates the pattern: `Config.from_env()` → `MCPToolLoader.load_tools(config)` → `MCPToolAgent`.
+
+Two integration paths to evaluate:
+- **Path A**: Custom `BaseLlm` wrapper — ADK Agent calls SafeChain under the hood
+- **Path B**: SafeChain's MCPToolAgent for execution, ADK for orchestration
+
+## Acceptance Criteria
+1. `verify_setup.py` includes SafeChain auth check + Gemini LLM call check
+2. A simple query through SafeChain returns a valid response
+3. Team can replicate setup with just `.env.example` + README instructions
+
+## Owner: Saheb
+## Due: End of Week 1
+EOF
+)"
+
+gh issue create \
+  --title "Set up Conversational Analytics API PoC" \
+  --label "spike,P0-critical" \
+  --milestone "M1: Prove the Loop" \
+  --assignee "bardbyte" \
+  --body "$(cat <<'EOF'
+## Objective
+Stand up a working PoC of Google's Conversational Analytics API. Run test queries and
+document capabilities vs limitations. This informs our Build vs Compose decision.
+
+## Deliverables
+- [ ] Working notebook: `notebooks/conv_analytics_poc.ipynb`
+- [ ] 10 test queries (simple → complex) with results documented
+- [ ] Capabilities table: what it handles vs what it doesn't
+- [ ] Latency measurements per query
+- [ ] Comparison notes: where Cortex pipeline adds value over raw API
+
+## Key Questions to Answer
+1. Does it respect `always_filter` / partition filters?
+2. How does it handle ambiguous terms (e.g., "revenue")?
+3. Can it handle cross-explore queries?
+4. What's the accuracy on moderate/complex queries?
+5. Rate limits and pricing post-preview?
+
+## Context
+Free until Sept 2026. We want to benchmark it against our pipeline on the same
+queries to validate the COMPOSE strategy (own the brain, use Looker for SQL).
+
+## Owner: Saheb
+## Due: This week (March 7)
+EOF
+)"
+
+gh issue create \
+  --title "Finance BU: LookML enhancement + field descriptions" \
+  --label "taxonomy,P0-critical" \
+  --milestone "M1: Prove the Loop" \
+  --assignee "Ayush" \
+  --body "$(cat <<'EOF'
+## Objective
+Enhance the Finance BU LookML with rich field descriptions, labels, and group_labels
+so that Cortex's retrieval can accurately find the right fields from natural language.
+
+## Deliverables
+- [ ] Review all Finance BU views (7 views, 1 model)
+- [ ] Add/improve `description` on every dimension and measure
+- [ ] Add `group_label` for logical grouping (e.g., "Transaction Metrics", "Customer Attributes")
+- [ ] Add `label` where the dimension name isn't intuitive
+- [ ] Ensure `always_filter` is set on partitioned tables
+- [ ] Document which explores exist and their join relationships
+
+## Why This Matters
+Cortex's retrieval accuracy is directly proportional to the quality of field descriptions.
+A field with no description = invisible to vector search. Every description you add
+directly improves accuracy.
+
+## Format for descriptions
+Include the business definition + common synonyms:
+```
+description: "Total dollar amount of all transactions. Also known as: total spend,
+transaction volume, gross amount."
+```
+
+## Acceptance Criteria
+1. Every dimension and measure in Finance BU has a non-empty description
+2. Descriptions include business synonyms (what people actually call it)
+3. Group labels applied consistently across views
+4. LookML validates and deploys cleanly
+
+## Owner: Ayush (Animesh can help with UI if needed)
+## Due: March 10
+EOF
+)"
+
+gh issue create \
+  --title "Finance BU: Looker project viewer UI" \
+  --label "ui,taxonomy,P1-important" \
+  --milestone "M1: Prove the Loop" \
+  --body "$(cat <<'EOF'
+## Objective
+Build a read-only UI to browse the Finance BU Looker project structure — helps the
+team see what models, explores, views, and fields exist without needing Looker access.
+
+## Deliverables
+- [ ] Web UI showing model → explore → view → field hierarchy
+- [ ] Search by field name or description
+- [ ] Show field descriptions, types, and join relationships
+- [ ] Read-only (no modifications)
+
+## Context
+This supports the LookML enhancement work (see related issue) and helps the whole
+team understand the data model they're building retrieval against.
+
+## Owner: Ayush + Animesh (UI)
+## Due: March 10
+EOF
+)"
 
 gh issue create \
   --title "Load LookML into Neo4j knowledge graph" \
@@ -112,7 +245,6 @@ Deploy the Looker MCP Server so the pipeline can call `query_sql` to generate de
 ## Context
 - Looker MCP has 33 tools. We only need ~8 for the pipeline.
 - Critical tool: `query_sql` — this is what replaces LLM SQL generation.
-- The MCP server connects to our Looker instance and wraps the API.
 
 ## Acceptance Criteria
 1. MCP server is running on GKE and accessible from dev environment
@@ -133,19 +265,16 @@ Build the Vertex AI Search corpus from LookML field descriptions for semantic se
 
 ## Deliverables
 - [ ] Script to build corpus: one document per field, enriched with explore/view context
-- [ ] Chunking: per-field (NOT per-view, NOT per-explore)
 - [ ] Each document includes: field name, type, description, view, explore, model
-- [ ] Structured metadata (`structData`) for filtering
+- [ ] Structured metadata for filtering
 - [ ] Search function that returns top-K fields by semantic similarity
 - [ ] Unit tests
 
 ## Starting Point
 - `src/retrieval/vector.py` — `build_search_corpus()` function ready to implement
-- `scripts/build_vertex_corpus.py` — create this script
 
 ## Key Design Decision
-Per-field chunking is intentional. Per-view returns too many irrelevant fields alongside
-the ones you need. Per-field lets retrieval pinpoint exact matches.
+Per-field chunking is intentional. Per-view returns too many irrelevant fields.
 
 ## Acceptance Criteria
 1. Corpus built from Finance BU LookML
@@ -167,24 +296,20 @@ Wire up the ADK agent with tools for each pipeline stage so ONE query works end-
 ## Deliverables
 - [ ] ADK root agent with system instruction enforcing pipeline sequence
 - [ ] Tools registered: classify_intent, extract_entities, retrieve_fields, validate_sql, format_response
-- [ ] McpToolset connected to deployed Looker MCP server (tool_filter to restrict to 5 tools)
-- [ ] Retrieval tool calls real vector + graph search
-- [ ] BigQuery execution + validation tool
+- [ ] McpToolset connected to deployed Looker MCP server
 - [ ] One working query: "What was total spend last quarter?" → correct answer
 
 ## Starting Point
 - `src/pipeline/agent.py` — ADK agent structure and implementation guide
 - `src/pipeline/state.py` — state schema
 - ADK docs: https://google.github.io/adk-docs/
-- McpToolset docs: https://google.github.io/adk-docs/tools/mcp-tools/
 
 ## Dependencies
-- Needs: Neo4j loaded (#1), Looker MCP deployed (#2), Vertex Search indexed (#3)
+- Needs: LLM access (#1), Neo4j loaded (#5), Looker MCP deployed (#6), Vertex Search indexed (#7)
 
 ## Acceptance Criteria
-1. `python -m src.pipeline.agent --query "What was total spend last quarter?"` returns correct answer
+1. `python -m src.pipeline.agent --query "What was total spend last quarter?"` → correct answer
 2. Can trace each tool call in the agent's output
-3. Pipeline handles simple query without crashing
 
 ## Due: End of Week 3
 EOF
@@ -198,29 +323,22 @@ gh issue create \
   --milestone "M2: Reliable Retrieval" \
   --body "$(cat <<'EOF'
 ## Objective
-Create taxonomy YAML entries for all business terms in the Finance BU's 7 views + 1 model.
+Create taxonomy YAML entries for all business terms in the Finance BU's 7 views.
 
 ## Deliverables
-- [ ] Taxonomy YAML file for each key business term (target: 30-50 terms)
-- [ ] Each entry: canonical_name, definition, formula (if metric), synonyms, column_mappings, lookml_target
+- [ ] 30-50 taxonomy YAML entries
+- [ ] Each entry: canonical_name, definition, synonyms, lookml_target
 - [ ] Focus on SYNONYM QUALITY — list every name people use for each concept
-- [ ] Validate all entries: `python -m src.taxonomy.schema validate taxonomy/finance/`
-- [ ] Generate enriched LookML descriptions from taxonomy
-
-## Starting Point
-- `taxonomy/finance/_template.yaml` — copy this for each term
-- `src/taxonomy/schema.py` — validates your entries
+- [ ] Validate: `python -m src.taxonomy.schema validate taxonomy/finance/`
 
 ## Why Synonyms Matter
-When a user says "CAC" but the LookML field is `acq_cost_per_unit`, vector search
-fails without synonyms. Every synonym you add directly improves retrieval accuracy.
-The description format is: Definition + "Also known as: [synonyms]" + Usage note.
+When a user says "CAC" but the field is `acq_cost_per_unit`, vector search fails
+without synonyms. Every synonym you add directly improves retrieval accuracy.
 
 ## Acceptance Criteria
 1. 30+ taxonomy entries for Finance BU
 2. Each entry has at least 3 synonyms
 3. All entries pass schema validation
-4. Generated LookML descriptions include synonyms
 
 ## Due: End of Week 4
 EOF
@@ -232,30 +350,23 @@ gh issue create \
   --milestone "M2: Reliable Retrieval" \
   --body "$(cat <<'EOF'
 ## Objective
-Implement the Neo4j Cypher queries that validate whether candidate fields from vector search
-are structurally reachable from a single Explore.
-
-## Why This Matters
-This is the single most important quality gate in the system. Vector search returns
-semantically similar fields but doesn't understand LookML structure. The graph check
-prevents the #1 error: selecting fields from incompatible explores.
+Implement Neo4j Cypher queries that validate whether candidate fields are structurally
+reachable from a single Explore. This is the #1 quality gate.
 
 ## Deliverables
-- [ ] `validate_fields_in_explore()` — given field names, find explores containing ALL of them
+- [ ] `validate_fields_in_explore()` — given fields, find explores containing ALL of them
 - [ ] `get_explore_schema()` — all fields available in an explore
 - [ ] `resolve_business_term()` — business term → LookML fields via taxonomy nodes
 - [ ] `get_partition_filters()` — required filters for cost control
-- [ ] Load BusinessTerm nodes from taxonomy YAML into Neo4j
 - [ ] Integration tests with real Neo4j
 
 ## Starting Point
-- `src/retrieval/graph_search.py` — all 5 Cypher queries are written, class structure ready
+- `src/retrieval/graph_search.py` — Cypher queries written, class structure ready
 
 ## Acceptance Criteria
 1. Given ["total_amount", "category_name"], returns "transactions" explore
 2. Given fields from different explores, returns empty (correctly rejects)
-3. Business term "CAC" resolves to the correct LookML field
-4. Partition filter query returns `always_filter` requirements
+3. Partition filter query returns `always_filter` requirements
 
 ## Due: End of Week 5
 EOF
@@ -267,42 +378,21 @@ gh issue create \
   --milestone "M2: Reliable Retrieval" \
   --body "$(cat <<'EOF'
 ## Objective
-Create the first golden dataset — 50 human-verified {question → expected answer} pairs
-for the Finance BU.
+Create 50 human-verified {question → expected answer} pairs for the Finance BU.
 
-## Three Sources (In Priority Order)
-
-### Source 1: Looker Query History (highest value)
-1. Export top 100 most-run queries from Looker for Finance BU
-2. Use LLM to generate natural language versions
-3. Manually verify the NL ↔ query pairing
-4. Add to golden dataset
-
-### Source 2: SME Questions
-1. Ask 3 Finance analysts: "What are the 20 questions you ask most?"
-2. Map their questions to LookML {explore, dimensions, measures}
-3. Add to golden dataset
-
-### Source 3: Synthetic Generation
-1. For each Finance explore, use LLM to generate 10 questions
-2. Manually validate and correct
-3. Add to golden dataset
+## Three Sources
+1. **Looker Query History** — export top 100 queries, generate NL versions
+2. **SME Questions** — ask Finance analysts their top 20 questions
+3. **Synthetic** — LLM-generated, manually validated
 
 ## Deliverables
 - [ ] 50+ golden queries in `tests/golden_queries/finance/`
-- [ ] JSON format per `_template.json`
-- [ ] Coverage: at least 5 queries per complexity level (simple/moderate/complex)
-- [ ] Each query has: NL question, expected model/explore/dimensions/measures
-- [ ] Run evaluation: `python scripts/run_eval.py --dataset=tests/golden_queries/finance/`
+- [ ] Mix: simple (20), moderate (20), complex (10)
+- [ ] Run: `python scripts/run_eval.py --dataset=tests/golden_queries/finance/`
 
 ## Starting Point
 - `tests/golden_queries/finance/_template.json`
-- `src/evaluation/golden.py` — loader + evaluator ready
-
-## Acceptance Criteria
-1. 50+ verified golden queries
-2. Mix of simple (20), moderate (20), complex (10)
-3. Evaluation script runs and produces metrics report
+- `src/evaluation/golden.py` — loader + evaluator
 
 ## Due: End of Week 5
 EOF
@@ -314,25 +404,18 @@ gh issue create \
   --milestone "M2: Reliable Retrieval" \
   --body "$(cat <<'EOF'
 ## Objective
-Implement Reciprocal Rank Fusion to merge vector + graph + fewshot results,
-plus the structural validation gate.
+Implement Reciprocal Rank Fusion to merge vector + graph + fewshot results.
 
 ## Deliverables
 - [ ] `reciprocal_rank_fusion()` — merge ranked lists with configurable weights
-- [ ] `fuse_and_validate()` — full pipeline: RRF → group by explore → validate → decide
+- [ ] `fuse_and_validate()` — RRF → group by explore → validate → decide
 - [ ] Decision logic: proceed / disambiguate / clarify / no_match
 - [ ] Weights from config: graph=1.5, fewshot=1.2, vector=1.0
 - [ ] Unit tests with mock retrieval results
-- [ ] Integration test with real Neo4j validation
 
 ## Starting Point
-- `src/retrieval/fusion.py` — full implementation ready for testing/refinement
-
-## Acceptance Criteria
-1. Given 3 ranked lists, produces correct fused ranking
-2. Structural validation correctly rejects cross-explore field combinations
-3. Disambiguation triggers when 2+ explores score similarly
-4. Configurable weights via `config/retrieval.yaml`
+- `src/retrieval/fusion.py` — implementation ready for testing/refinement
+- `config/retrieval.yaml` — configurable weights
 
 ## Due: End of Week 5
 EOF
@@ -349,50 +432,35 @@ gh issue create \
 Detect unanswerable queries and refuse gracefully with helpful alternatives.
 
 ## Out-of-Scope Queries
-- Predictions/forecasting: "Predict next quarter's revenue"
-- Causal analysis: "Why did X happen?"
-- Data modifications: "Update/delete X"
-- PII queries: "Show me customer SSNs"
-- Non-data: "Write me an email"
+- Predictions: "Predict next quarter's revenue"
+- Causal: "Why did X happen?"
+- Data mods: "Update/delete X"
+- PII: "Show me customer SSNs"
 
 ## Deliverables
-- [ ] Boundary detection in intent classification stage
+- [ ] Boundary detection in intent classification
 - [ ] Graceful refusal with 2-3 alternative suggestions
-- [ ] PII detection (refuse queries targeting PII columns)
-- [ ] 20+ boundary test cases in golden dataset
-
-## Acceptance Criteria
-1. "Predict next quarter's revenue" → refusal + alternative suggestions
-2. "Show me customer SSNs" → refusal
-3. Zero hallucinated answers for out-of-scope queries
+- [ ] 20+ boundary test cases
 
 ## Due: End of Week 7
 EOF
 )"
 
 gh issue create \
-  --title "Add complexity-aware routing (EllieSQL pattern)" \
+  --title "Add complexity-aware routing" \
   --label "pipeline,P1-important" \
   --milestone "M3: Handle the Edges" \
   --body "$(cat <<'EOF'
 ## Objective
 Route simple queries directly to Looker MCP (skip retrieval), saving 40% of tokens.
 
-## Routing Logic
-- **Simple** (single table, single measure, obvious mapping): fast path → Looker MCP
-- **Moderate** (joins, filters, time ranges): standard path → retrieval → Looker MCP
-- **Complex** (multi-hop, cross-domain): deep path → decompose + retrieve per sub-query
+## Routing: Simple → fast path | Moderate → standard | Complex → decompose
 
 ## Deliverables
 - [ ] Complexity classifier in intent stage
 - [ ] Simple query fast path (skip retrieval)
-- [ ] Complex query decomposition into sub-queries
-- [ ] Latency and token measurements per path
-
-## Acceptance Criteria
-1. "What was total revenue?" routes to simple path (no retrieval)
-2. "Spend by merchant category last quarter" routes to moderate path
-3. Token savings measured: >30% reduction for simple queries
+- [ ] Complex query decomposition
+- [ ] Token savings measurements
 
 ## Due: End of Week 8
 EOF
@@ -404,19 +472,12 @@ gh issue create \
   --milestone "M3: Handle the Edges" \
   --body "$(cat <<'EOF'
 ## Objective
-When the query is ambiguous (e.g., "revenue" could mean 3 things), present options
-to the user instead of guessing.
+When the query is ambiguous, present options to the user instead of guessing.
 
 ## Deliverables
-- [ ] Disambiguation detection in fusion layer (multiple explores score similarly)
-- [ ] User-facing disambiguation response with clear options
-- [ ] Store user preference for future queries (personalization)
+- [ ] Disambiguation detection in fusion layer
+- [ ] User-facing options with clear descriptions
 - [ ] 10+ disambiguation test cases
-
-## Acceptance Criteria
-1. "Show me revenue" → presents gross/net/card fee options
-2. User selects "net revenue" → correct query executes
-3. Next time user says "revenue" → defaults to net (personalized)
 
 ## Due: End of Week 8
 EOF
@@ -428,23 +489,12 @@ gh issue create \
   --milestone "M3: Handle the Edges" \
   --body "$(cat <<'EOF'
 ## Objective
-Add caching to reduce latency and cost.
-
-## Three Layers
-1. **Exact match** — hash(normalize(query)) → cached result (TTL: 15min)
-2. **Semantic** — embedding similarity > 0.95 → cached result (TTL: 1hr)
-3. **Metadata** — cache Looker MCP get_models/get_explores (TTL: 5min)
-
-## Target
-- Combined cache hit rate: 60%+ at steady state
-- Exact match latency: <5ms
-- Semantic cache latency: ~50ms
+Add caching: exact match (15min), semantic (1hr), metadata (5min). Target 60%+ hit rate.
 
 ## Deliverables
-- [ ] Exact match cache (Redis or in-memory)
-- [ ] Semantic cache (embedding similarity check)
+- [ ] Exact match cache
+- [ ] Semantic cache (embedding similarity > 0.95)
 - [ ] Metadata cache (Looker MCP responses)
-- [ ] Cache hit/miss metrics
 - [ ] TTLs configurable via `config/retrieval.yaml`
 
 ## Due: End of Week 9
@@ -456,39 +506,19 @@ EOF
 gh issue create \
   --title "Evaluate Conversational Analytics API vs Cortex" \
   --label "spike,P0-critical" \
-  --milestone "M1: Prove the Loop" \
+  --milestone "M2: Reliable Retrieval" \
   --body "$(cat <<'EOF'
 ## Objective
-Run the same queries through Google's Conversational Analytics API and Cortex.
-Make the final Build vs Compose decision with data.
-
-## Test Plan
-1. Select 20 queries from golden dataset (mix of simple/moderate/complex)
-2. Run through Conversational Analytics API
-3. Run through Cortex pipeline
-4. Compare: accuracy, latency, disambiguation handling, cost
-5. Document findings
-
-## Evaluation Criteria
-| Criterion | Weight |
-|-----------|--------|
-| Accuracy on moderate/complex queries | 40% |
-| Disambiguation handling | 20% |
-| Enterprise guardrails (PII, cost control) | 20% |
-| Latency | 10% |
-| Cost predictability | 10% |
-
-## Expected Outcome
-Validate the COMPOSE strategy: own the agent brain (intent, retrieval, guardrails),
-use Looker MCP for SQL generation, benchmark against API for simple queries.
+Run the same 20 queries through Google's Conversational Analytics API and Cortex.
+Make the Build vs Compose decision with data.
 
 ## Deliverables
-- [ ] Benchmark notebook: `notebooks/03_conv_analytics_comparison.ipynb`
-- [ ] Results table with per-query comparison
+- [ ] Benchmark notebook: `notebooks/conv_analytics_comparison.ipynb`
+- [ ] Per-query comparison table (accuracy, latency, cost)
 - [ ] Decision document: Compose confirmed or revised
-- [ ] Share findings with team
 
-## Due: End of Week 1
+## Depends on: Conv Analytics API PoC (#2), Golden dataset (#11)
+## Due: End of Week 5
 EOF
 )"
 
@@ -498,19 +528,12 @@ gh issue create \
   --milestone "M4: Production Ready" \
   --body "$(cat <<'EOF'
 ## Objective
-User corrections feed back into the system to improve accuracy over time.
-
-## Feedback Types
-- Thumbs up → implicit correct, add to golden dataset candidates
-- Thumbs down → flag for review
-- "I meant X not Y" → new synonym mapping
-- User corrects term → update taxonomy
+User corrections feed back to improve accuracy over time.
 
 ## Deliverables
-- [ ] Feedback capture in response format
-- [ ] Pipeline: correction → golden dataset queue (for human review)
+- [ ] Feedback capture (thumbs up/down, "I meant X")
+- [ ] Pipeline: correction → golden dataset queue
 - [ ] Pipeline: new synonym → taxonomy update PR
-- [ ] Dashboard: feedback volume, correction rate, common mismatches
 
 ## Due: End of Week 12
 EOF
@@ -524,42 +547,13 @@ gh issue create \
 ## Objective
 Full visibility into pipeline health, accuracy, and cost.
 
-## Metrics
-- Per-stage latency (intent, retrieval, SQL gen, execution, formatting)
-- Retrieval accuracy (daily golden dataset eval)
-- Cache hit rates (exact, semantic, metadata)
-- Token usage per query
-- BigQuery bytes scanned + cost per query
-- User satisfaction (thumbs up/down rate)
-
 ## Deliverables
 - [ ] Structured logging at each pipeline stage
-- [ ] Metrics export (Prometheus/Cloud Monitoring)
 - [ ] Dashboard: latency P50/P90/P99 by stage
-- [ ] Dashboard: accuracy trend over time
-- [ ] Dashboard: cost per query trend
-- [ ] Alerting: accuracy drops below 85%, latency P90 > 10s
+- [ ] Dashboard: accuracy trend, cost per query
+- [ ] Alerting: accuracy < 85%, latency P90 > 10s
 
 ## Due: End of Week 13
-EOF
-)"
-
-gh issue create \
-  --title "Looker project read-only viewer UI" \
-  --label "taxonomy,P2-nice" \
-  --milestone "M2: Reliable Retrieval" \
-  --body "$(cat <<'EOF'
-## Objective
-Build a read-only UI to browse the Looker project structure (models, explores, views, fields).
-Helps the team understand what's available without needing Looker access.
-
-## Deliverables
-- [ ] Web UI showing model → explore → view → field hierarchy
-- [ ] Search by field name or description
-- [ ] Show field descriptions, types, and join relationships
-- [ ] Read-only (no modifications)
-
-## Due: End of Week 5
 EOF
 )"
 
@@ -567,11 +561,17 @@ echo ""
 echo "=== Setup complete ==="
 echo ""
 echo "Created:"
-echo "  - 10 labels"
+echo "  - 11 labels"
 echo "  - 4 milestones (M1-M4)"
-echo "  - 15 issues"
+echo "  - 19 issues"
+echo ""
+echo "Team assignments:"
+echo "  - Saheb: LLM access pathway (#1), Conv Analytics API PoC (#2)"
+echo "  - Ayush: LookML enhancement (#3, due March 10), Looker viewer UI (#4)"
+echo "  - Animesh: Can help Ayush with UI (#4), golden dataset (#11)"
+echo "  - Rajesh + Likhita: Neo4j (#5), GKE deployment (#6), graph validation (#10)"
 echo ""
 echo "Next steps:"
-echo "  1. Assign issues to team members"
+echo "  1. Assign remaining issues to team members"
 echo "  2. Pin the milestone board view"
 echo "  3. Start with M1 issues"

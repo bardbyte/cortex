@@ -13,17 +13,8 @@ dependencies = [
     "lkml>=1.3.0",
     "pyyaml>=6.0",
     "pydantic>=2.9.0",
-    "pydantic-settings>=2.0.0",
     "httpx>=0.27.0",
-    "httpx-sse>=0.4.0",
     "python-dotenv>=1.0.0",
-    # SafeChain LLM access (Amex internal — install from internal PyPI)
-    "safechain",
-    "ee_config",
-    # LangChain pinned — SafeChain requires this exact version
-    "langchain-core==0.3.83",
-    # MCP protocol
-    "mcp>=1.0.0",
 ]
 
 [project.optional-dependencies]

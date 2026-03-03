@@ -3,8 +3,6 @@
 setup:
 	python -m venv .venv
 	.venv/bin/pip install -e ".[dev]"
-	@echo "Pinning langchain-core (safechain may have overridden it)..."
-	.venv/bin/pip install langchain-core==0.3.83 --force-reinstall -q
 	@echo "Setup complete. Run: source .venv/bin/activate"
 
 check:
@@ -12,8 +10,6 @@ check:
 	python --version
 	@echo "Checking environment..."
 	@test -f .env && echo ".env: found" || echo ".env: MISSING (copy .env.example to .env)"
-	@echo "Checking GCP auth..."
-	gcloud auth application-default print-access-token > /dev/null 2>&1 && echo "GCP: OK" || echo "GCP: Run 'gcloud auth application-default login'"
 	@echo "Checking Neo4j..."
 	docker compose ps neo4j 2>/dev/null && echo "Neo4j: running" || echo "Neo4j: not running (run 'docker compose up neo4j')"
 
