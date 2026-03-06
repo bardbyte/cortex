@@ -1,5 +1,5 @@
 # ACE Organization — Organizational hierarchy
-# Source: ace_organization table
+# Source: axp-lumid.dw.ace_organization
 # Business Terms: ACE Organization Level
 #
 # ┌─────────────────────────────────────────────────────────────────────┐

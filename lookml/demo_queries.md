@@ -1,207 +1,169 @@
-# Demo Queries — Finance BU (Cortex NL2SQL)
+# Finance BU Demo Test Queries
 
-**Purpose:** These are the natural language questions the Cortex agent should be able to answer based on the 17 business terms mapped across 7 views and 5 explores.
+Directed test plan for the Cortex pipeline. Run these in order —
+each group validates a specific capability layer.
 
-**For each query:** the expected explore, dimensions, measures, and any filters are listed so Animesh can add these to the golden dataset.
-
----
-
-## Explore 1: Card Member 360
-
-### Q1: "How many active customers do we have?"
-- **Explore:** `finance_cardmember_360`
-- **Measures:** `custins_customer_insights_cardmember.active_customers_standard`
-- **Notes:** Tests synonym matching ("active customers" → `is_active_standard`). May need disambiguation: "standard (>$50) or premium (>$100)?"
-
-### Q2: "How many premium active customers do we have?"
-- **Explore:** `finance_cardmember_360`
-- **Measures:** `custins_customer_insights_cardmember.active_customers_premium`
-- **Notes:** Tests the stricter >$100 threshold. Also known as "active customers 2."
-
-### Q3: "What's the average billed business by generation?"
-- **Explore:** `finance_cardmember_360`
-- **Dimensions:** `cmdl_card_main.generation`
-- **Measures:** `custins_customer_insights_cardmember.avg_billed_business`
-- **Notes:** Cross-view query — customer spending × demographics. Tests join correctness.
-
-### Q4: "Show me customer tenure distribution for Baby Boomers"
-- **Explore:** `finance_cardmember_360`
-- **Dimensions:** `custins_customer_insights_cardmember.customer_tenure_tier`
-- **Measures:** `custins_customer_insights_cardmember.total_customers`
-- **Filters:** `cmdl_card_main.generation` = "Baby Boomer"
-- **Notes:** Tests filtering on joined dimension + tier bucketing.
-
-### Q5: "How many customers have authorized users?"
-- **Explore:** `finance_cardmember_360`
-- **Measures:** `custins_customer_insights_cardmember.customers_with_authorized_users`
-- **Notes:** Tests synonym matching ("authorized users" → "authorized agents" → `has_authorized_users`).
-
-### Q6: "What's our total billed business?"
-- **Explore:** `finance_cardmember_360`
-- **Measures:** `custins_customer_insights_cardmember.total_billed_business`
-- **Notes:** Simple single-measure query. Tests "billed business" = "total spend" synonym matching.
+**Looker instance:** prj-d-lumi-gpt
+**Connection:** prj-d-lumi-gpt (BQ: axp-lumid.dw)
 
 ---
 
-## Explore 2: Merchant Profitability
+## Group 1: Single-View Basics (custins only)
+Validates: entity extraction, vector search, single-view query
 
-### Q7: "What's the average ROC globally?"
-- **Explore:** `finance_merchant_profitability`
-- **Measures:** `fin_card_member_merchant_profitability.avg_roc_global`
-- **Notes:** Tests "ROC" synonym matching → "Return on Capital." Also known as "average ROC_test global."
+| # | Natural Language Query | Expected Explore | Dimensions | Measures | Filters |
+|---|----------------------|-----------------|------------|----------|---------|
+| 1 | "How many total customers do we have?" | finance_cardmember_360 | — | total_customers | partition_date: last 90 days |
+| 2 | "What is total billed business?" | finance_cardmember_360 | — | total_billed_business | partition_date: last 90 days |
+| 3 | "How many active customers do we have?" | finance_cardmember_360 | — | active_customers_standard | partition_date: last 90 days |
+| 4 | "Average spend per card member" | finance_cardmember_360 | — | avg_billed_business | partition_date: last 90 days |
+| 5 | "Show me total accounts in force" | finance_cardmember_360 | — | total_accounts_in_force | partition_date: last 90 days |
 
-### Q8: "How many customers dine at restaurants?"
-- **Explore:** `finance_merchant_profitability`
-- **Measures:** `fin_card_member_merchant_profitability.dining_customer_count`
-- **Notes:** Tests the composite "dining at restaurant" definition (spend > 0 AND category = Restaurants).
-
-### Q9: "What's the total restaurant spend by generation?"
-- **Explore:** `finance_merchant_profitability`
-- **Dimensions:** `cmdl_card_main.generation`
-- **Measures:** `fin_card_member_merchant_profitability.total_restaurant_spend`
-- **Notes:** Cross-view query — merchant profitability × demographics.
-
-### Q10: "Average ROC for Millennial card members"
-- **Explore:** `finance_merchant_profitability`
-- **Measures:** `fin_card_member_merchant_profitability.avg_roc_global`
-- **Filters:** `cmdl_card_main.generation` = "Millennial"
-- **Notes:** Tests generation filter applied to profitability explore.
+**What to verify:**
+- Agent finds `finance_cardmember_360` explore
+- Partition filter auto-injected (sql_always_where + always_filter)
+- Correct measure selected (not a dimension)
+- Query #3 tests disambiguation: "active customers" maps to standard OR premium — agent should pick standard as default
 
 ---
 
-## Explore 3: Travel Sales
+## Group 2: Cross-View Join (custins + cmdl)
+Validates: graph search, join path validation, multi-view query
 
-### Q11: "What are our gross travel sales by travel vertical?"
-- **Explore:** `finance_travel_sales`
-- **Dimensions:** `tlsarpt_travel_sales.travel_vertical`
-- **Measures:** `tlsarpt_travel_sales.total_gross_tls_sales`
-- **Notes:** Tests "gross TLS sales" synonym matching and travel vertical categorization.
+| # | Natural Language Query | Expected Explore | Dimensions | Measures | Filters |
+|---|----------------------|-----------------|------------|----------|---------|
+| 6 | "Total billed business by generation" | finance_cardmember_360 | cmdl.generation | custins.total_billed_business | partition_date: last 90 days |
+| 7 | "Active customers by card product" | finance_cardmember_360 | cmdl.card_prod_id | custins.active_customers_standard | partition_date: last 90 days |
+| 8 | "Average tenure by generation" | finance_cardmember_360 | cmdl.generation | custins.avg_customer_tenure | partition_date: last 90 days |
+| 9 | "Card replacement rate by card product" | finance_cardmember_360 | cmdl.card_prod_id | cmdl.replacement_rate | partition_date: last 90 days |
+| 10 | "Millennial customers with billed business over $100" | finance_cardmember_360 | cmdl.generation | custins.active_customers_premium | generation: Millennial, partition_date: last 90 days |
 
-### Q12: "What's the average hotel cost per night for round trip bookings?"
-- **Explore:** `finance_travel_sales`
-- **Measures:** `tlsarpt_travel_sales.avg_hotel_cost_per_night`
-- **Filters:** `tlsarpt_travel_sales.air_trip_type` = "Round Trip"
-- **Notes:** Compound query — hotel metric filtered by air trip type.
-
-### Q13: "Total travel sales for Gen Z customers"
-- **Explore:** `finance_travel_sales`
-- **Measures:** `tlsarpt_travel_sales.total_gross_tls_sales`
-- **Filters:** `cmdl_card_main.generation` = "Gen Z"
-- **Notes:** Cross-view filter — travel data filtered by demographic.
-
-### Q14: "Show me bookings by air trip type"
-- **Explore:** `finance_travel_sales`
-- **Dimensions:** `tlsarpt_travel_sales.air_trip_type`
-- **Measures:** `tlsarpt_travel_sales.total_bookings`
-- **Notes:** Simple dimensional breakdown. Tests "air trip type" field selection.
-
-### Q15: "Average booking value by travel vertical"
-- **Explore:** `finance_travel_sales`
-- **Dimensions:** `tlsarpt_travel_sales.travel_vertical`
-- **Measures:** `tlsarpt_travel_sales.avg_booking_value`
-- **Notes:** Tests aggregated metric by category.
+**What to verify:**
+- Agent correctly joins custins + cmdl via cust_ref
+- Generation dimension comes from cmdl, not custins
+- Graph validation confirms both fields in same explore
+- Query #10 tests filter injection (generation = 'Millennial')
 
 ---
 
-## Explore 4: Card Issuance
+## Group 3: Segmentation & Filtering
+Validates: filter handling, cluster key optimization, business term resolution
 
-### Q16: "How many cards were issued through non-member campaigns?"
-- **Explore:** `finance_card_issuance`
-- **Measures:** `gihr_card_issuance.non_cm_initiated_issuances`
-- **Notes:** Tests "campaign not CM initiated" synonym matching. Key demo query.
+| # | Natural Language Query | Expected Explore | Dimensions | Measures | Filters |
+|---|----------------------|-----------------|------------|----------|---------|
+| 11 | "Billed business for OPEN segment" | finance_cardmember_360 | custins.bus_seg | custins.total_billed_business | bus_seg: OPEN |
+| 12 | "New vs organic vs attrited customer counts" | finance_cardmember_360 | custins.basic_cust_noa | custins.total_customers | partition_date: last 90 days |
+| 13 | "Active customers by business organization" | finance_cardmember_360 | custins.business_org | custins.active_customers_standard | partition_date: last 90 days |
+| 14 | "Customers with Apple Pay by generation" | finance_cardmember_360 | cmdl.generation, cmdl.apple_pay_wallet_flag | custins.total_customers | partition_date: last 90 days |
+| 15 | "Air services spend for Millennials in last 90 days" | finance_cardmember_360 | cmdl.generation | cmdl.avg_air_services_spend_90d | generation: Millennial |
 
-### Q17: "What percentage of issuances are company-driven vs organic?"
-- **Explore:** `finance_card_issuance`
-- **Measures:** `gihr_card_issuance.pct_non_cm_initiated`, `gihr_card_issuance.total_issuances`
-- **Notes:** Tests percentage measure and comparison framing.
-
-### Q18: "Card issuance by campaign code"
-- **Explore:** `finance_card_issuance`
-- **Dimensions:** `gihr_card_issuance.cmgn_cd`
-- **Measures:** `gihr_card_issuance.total_issuances`
-- **Notes:** Simple dimensional breakdown by campaign.
-
----
-
-## Explore 5: Customer Risk
-
-### Q19: "What's the revolve index for our portfolio?"
-- **Explore:** `finance_customer_risk`
-- **Measures:** `risk_indv_cust.revolve_index`
-- **Notes:** Core risk metric. Tests "revolve index" → revolving balance ratio.
-
-### Q20: "Revolve index by generation"
-- **Explore:** `finance_customer_risk`
-- **Dimensions:** `cmdl_card_main.generation`
-- **Measures:** `risk_indv_cust.revolve_index`
-- **Notes:** Cross-view — risk × demographics. High-value insight for portfolio management.
-
-### Q21: "How many customers are revolving by card type?"
-- **Explore:** `finance_customer_risk`
-- **Dimensions:** `cmdl_card_main.card_type`
-- **Measures:** `risk_indv_cust.revolving_customer_count`
-- **Notes:** Tests "revolving" synonym matching and card type segmentation.
+**What to verify:**
+- Business terms resolve correctly (OPEN → bus_seg, NOA → basic_cust_noa)
+- Cluster key filters applied when appropriate
+- Multi-dimension queries work across views
+- Query #12 tests categorical breakdown (NOA segment)
 
 ---
 
-## Cross-Cutting Queries (tests explore selection)
+## Group 4: Merchant Profitability (largest table)
+Validates: cost optimization, aggregate table routing, cross-explore disambiguation
 
-### Q22: "What's the replacement rate for Gen X card members?"
-- **Explore:** `finance_cardmember_360`
-- **Dimensions:** (none, or `cmdl_card_main.generation` as filter)
-- **Measures:** `cmdl_card_main.replacement_rate`
-- **Filters:** `cmdl_card_main.generation` = "Gen X"
-- **Notes:** Tests explore routing — this needs cardmember_360 because replacement rate is on cmdl_card_main.
+| # | Natural Language Query | Expected Explore | Dimensions | Measures |
+|---|----------------------|-----------------|------------|----------|
+| 16 | "Average ROC by merchant category" | finance_merchant_profitability | fin.oracle_mer_hier_lvl3 | fin.avg_roc_global |
+| 17 | "Total restaurant spend" | finance_merchant_profitability | — | fin.total_restaurant_spend |
+| 18 | "How many customers dine at restaurants?" | finance_merchant_profitability | — | fin.dining_customer_count |
+| 19 | "ROC by generation" | finance_merchant_profitability | cmdl.generation | fin.avg_roc_global |
+| 20 | "Dining customers by business segment" | finance_merchant_profitability | custins.bus_seg | fin.dining_customer_count |
 
-### Q23: "Compare active customer count vs revolve index by generation"
-- **Explore:** `finance_cardmember_360`
-- **Dimensions:** `cmdl_card_main.generation`
-- **Measures:** `custins_customer_insights_cardmember.active_customers_standard`, `risk_indv_cust.revolve_index`
-- **Notes:** Multi-measure query requiring three joined views. High-complexity test.
-
-### Q24: "Total travel sales for active premium customers"
-- **Explore:** `finance_travel_sales`
-- **Measures:** `tlsarpt_travel_sales.total_gross_tls_sales`
-- **Filters:** `custins_customer_insights_cardmember.is_active_premium` = "Yes"
-- **Notes:** Tests compound filter — travel data for premium-active customers only.
-
-### Q25: "Which generation spends the most at restaurants?"
-- **Explore:** `finance_merchant_profitability`
-- **Dimensions:** `cmdl_card_main.generation`
-- **Measures:** `fin_card_member_merchant_profitability.total_restaurant_spend`
-- **Sort:** `total_restaurant_spend` descending, limit 1
-- **Notes:** Tests ranking/superlative query ("most") with cross-view join.
+**What to verify:**
+- Queries #16-17 should hit aggregate tables (monthly_merchant_category_rollup)
+- Query #19 should hit roc_by_generation aggregate table
+- Partition filter enforced (this is the biggest table — cost control critical)
+- "restaurant spend" resolves to total_restaurant_spend, not total_merchant_spend
 
 ---
 
-## Query Complexity Summary
+## Group 5: Travel, Risk, Issuance (other explores)
+Validates: multi-explore routing, correct explore selection
 
-| Complexity | Count | Description |
-|---|---|---|
-| Simple (single measure) | 7 | Q1, Q2, Q5, Q6, Q7, Q8, Q19 |
-| Medium (dimension + measure) | 9 | Q3, Q11, Q14, Q15, Q17, Q18, Q20, Q21, Q25 |
-| Filtered (measure + filter) | 6 | Q4, Q10, Q12, Q13, Q16, Q22 |
-| Complex (multi-view, multi-measure) | 3 | Q23, Q24, Q9 |
-| **Total** | **25** | |
+| # | Natural Language Query | Expected Explore | Dimensions | Measures |
+|---|----------------------|-----------------|------------|----------|
+| 21 | "Gross TLS sales by travel vertical" | finance_travel_sales | tlsarpt.travel_vertical | tlsarpt.total_gross_tls_sales |
+| 22 | "Average hotel cost per night" | finance_travel_sales | — | tlsarpt.avg_hotel_cost_per_night |
+| 23 | "Round trip vs one way bookings" | finance_travel_sales | tlsarpt.air_trip_type | tlsarpt.total_bookings |
+| 24 | "What is the revolve index?" | finance_customer_risk | — | risk.revolve_index |
+| 25 | "Non-CM initiated card issuances by campaign" | finance_card_issuance | gihr.cmgn_cd | gihr.non_cm_initiated_issuances |
 
-## Business Terms Coverage
+**What to verify:**
+- Agent routes to correct explore (not finance_cardmember_360 for everything)
+- Travel queries use booking_date as partition (not partition_date)
+- "Revolve index" resolves to the custom ratio measure
+- "Not CM initiated" resolves to the correct boolean-derived measure
 
-| # | Business Term | View | LookML Field | Covered in Query |
-|---|---|---|---|---|
-| 1 | Active Customers (Standard) | custins | `is_active_standard`, `active_customers_standard` | Q1, Q23 |
-| 2 | Active Customers (Premium) | custins | `is_active_premium`, `active_customers_premium` | Q2, Q24 |
-| 3 | Billed Business | custins | `billed_business`, `total_billed_business`, `avg_billed_business` | Q3, Q6 |
-| 4 | Customer Tenure | custins | `customer_tenure`, `customer_tenure_tier` | Q4 |
-| 5 | Customers with Authorized Users | custins | `has_authorized_users`, `customers_with_authorized_users` | Q5 |
-| 6 | Generation | cmdl | `generation` | Q3, Q4, Q9, Q10, Q13, Q20, Q21, Q22, Q23, Q25 |
-| 7 | Card Member Details | cmdl | `card_type`, `card_design` | Q21, Q22 |
-| 8 | Replacement Rates | cmdl | `is_replacement`, `replacement_rate` | Q22 |
-| 9 | Average ROC Global | fin | `avg_roc_global` | Q7, Q10 |
-| 10 | Dining at Restaurant | fin | `is_dining_at_restaurant`, `dining_customer_count`, `total_restaurant_spend` | Q8, Q9, Q25 |
-| 11 | Gross TLS Sales | tlsarpt | `total_gross_tls_sales` | Q11, Q13, Q24 |
-| 12 | Travel Verticals | tlsarpt | `travel_vertical` | Q11, Q15 |
-| 13 | Hotel Cost Per Night | tlsarpt | `avg_hotel_cost_per_night` | Q12 |
-| 14 | Air Trip Type | tlsarpt | `air_trip_type` | Q12, Q14 |
-| 15 | Revolve Index | risk | `revolve_index` | Q19, Q20, Q23 |
-| 16 | Campaign Not CM Initiated | gihr | `is_not_cm_initiated`, `non_cm_initiated_issuances` | Q16, Q17 |
-| 17 | ACE Organization Level | ace | `org_level`, `avg_org_level` | (via join on explores 1 & 4) |
+---
+
+## Group 6: Disambiguation & Edge Cases
+Validates: disambiguation flow, graceful clarification, boundary detection
+
+| # | Natural Language Query | Expected Behavior |
+|---|----------------------|-------------------|
+| 26 | "Show me active customers" | Should clarify: Standard ($50) or Premium ($100)? |
+| 27 | "What is spend?" | Should clarify: Billed business? Merchant spend? TLS sales? |
+| 28 | "Revenue by category and generation" | Should ask: Merchant category (profitability) or business org (cardmember)? |
+| 29 | "Compare Millennial and Gen Z retention" | Should recognize no retention metric; suggest tenure/NOA as proxy |
+| 30 | "Predict next quarter spend" | Should refuse: out of scope (no prediction capability) |
+
+**What to verify:**
+- Agent doesn't guess when ambiguous — asks for clarification
+- When multiple explores could answer, agent presents options
+- Out-of-scope queries get graceful refusal with redirect
+- Query #26 is the critical test: the two active customer definitions are intentionally ambiguous
+
+---
+
+## Group 7: Follow-up / Multi-turn
+Validates: conversation context, result modification, follow-up handling
+
+Run as a conversation sequence:
+
+| Turn | Query | Expected Behavior |
+|------|-------|-------------------|
+| A1 | "Total billed business by generation" | Returns data from finance_cardmember_360 |
+| A2 | "Now break that down by card product too" | Adds cmdl.card_prod_id to previous dimensions |
+| A3 | "Filter to just Millennials" | Adds generation = 'Millennial' filter |
+| A4 | "What about for the OPEN segment?" | Adds bus_seg = 'OPEN' filter |
+| A5 | "Switch to showing replacement rate instead" | Swaps measure to cmdl.replacement_rate, keeps filters |
+
+**What to verify:**
+- Each turn modifies the previous query, doesn't start from scratch
+- Filters accumulate correctly
+- Measure swap preserves dimension/filter context
+- No redundant retrieval calls for follow-ups
+
+---
+
+## Coverage Matrix
+
+| Business Term | Query # | Explore |
+|--------------|---------|---------|
+| Active Customers (Standard) | 3, 7, 13, 26 | cardmember_360 |
+| Active Customers (Premium) | 10, 26 | cardmember_360 |
+| Billed Business | 2, 6, 11 | cardmember_360 |
+| Customer Tenure | 8 | cardmember_360 |
+| Accounts in Force | 5 | cardmember_360 |
+| NOA Segment | 12 | cardmember_360 |
+| Generation | 6, 7, 8, 10, 14, 15, 19 | cardmember_360 + merchant |
+| Card Product | 7, 9, A2 | cardmember_360 |
+| Replacement Rate | 9, A5 | cardmember_360 |
+| Average ROC | 16, 19 | merchant_profitability |
+| Dining at Restaurant | 17, 18, 20 | merchant_profitability |
+| Gross TLS Sales | 21 | travel_sales |
+| Hotel Cost Per Night | 22 | travel_sales |
+| Air Trip Type | 23 | travel_sales |
+| Revolve Index | 24 | customer_risk |
+| Campaign Not CM Initiated | 25 | card_issuance |
+| ACE Organization Level | — (ref table, tested via joins) | card_issuance |
+
+**Total: 30 test queries + 5 follow-ups = 35 test interactions**
+**Coverage: 17/17 business terms**

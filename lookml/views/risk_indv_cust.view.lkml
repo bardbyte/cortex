@@ -1,5 +1,5 @@
 # Individual Customer Risk — Risk scoring and revolve behavior
-# Source: risk_indv_cust table
+# Source: axp-lumid.dw.risk_indv_cust
 # Business Terms: Revolve Index
 #
 # ┌─────────────────────────────────────────────────────────────────────┐

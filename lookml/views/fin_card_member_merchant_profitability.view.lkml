@@ -1,5 +1,5 @@
 # Card Member Merchant Profitability — Financial performance by merchant
-# Source: fin_card_member_merchant_profitability table
+# Source: axp-lumid.dw.fin_card_member_merchant_profitability
 # Business Terms: Average ROC, Dining at Restaurant
 #
 # ┌─────────────────────────────────────────────────────────────────────┐

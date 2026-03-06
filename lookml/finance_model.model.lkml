@@ -1,5 +1,6 @@
 # Finance Model — Cortex AI Pipeline Semantic Layer
-# Project: prj-d-lumi-gpt (dev) / cortex_finance (prod per ADR-002)
+# Project: prj-d-lumi-gpt
+# Connection: prj-d-lumi-gpt (BigQuery: axp-lumid.dw)
 # 7 views, 5 explores, 17+ business terms
 #
 # ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -43,15 +44,17 @@
 # │    date filter falls within the 365-day sql_always_where window.           │
 # └─────────────────────────────────────────────────────────────────────────────┘
 
-connection: "finance_bigquery"
+connection: "prj-d-lumi-gpt"
 
 # ---- Constants ----
+# These resolve the sql_table_name references in view files:
+#   `@{PROJECT_ID}.@{DATASET}.table_name`
 constant: PROJECT_ID {
-  value: "amex-project"
+  value: "axp-lumid"
 }
 
 constant: DATASET {
-  value: "finance_dataset"
+  value: "dw"
 }
 
 # ---- Includes ----
@@ -142,8 +145,8 @@ explore: finance_cardmember_360 {
 
   # LAYER 3: Smart default — removed if user filters by cust_ref or card_type
   conditionally_filter: {
-    filters: [cmdl_card_main.card_type: ""]
-    unless: [finance_cardmember_360.cust_ref, cmdl_card_main.card_type]
+    filters: [cmdl_card_main.card_prod_id: ""]
+    unless: [finance_cardmember_360.cust_ref, cmdl_card_main.card_prod_id]
   }
 
   join: cmdl_card_main {

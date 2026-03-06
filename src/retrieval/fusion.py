@@ -26,13 +26,17 @@ After fusion, the STRUCTURAL VALIDATION GATE runs:
   - LOW coverage → clarify (ask user to narrow scope)
   - NO explore matches → error
 
+Storage: pgvector + Apache AGE on PostgreSQL (see ADR-004).
+The structural validation gate uses AGE Cypher queries against the
+lookml_schema graph, executed via the same pg_conn as vector search.
+
 What to implement:
   1. reciprocal_rank_fusion() — merge ranked lists with weights
-  2. fuse_and_validate() — RRF + group by explore + Neo4j validation + decision
+  2. fuse_and_validate() — RRF + group by explore + AGE validation + decision
   3. Decision logic returning a RetrievalResult
 
 Dependencies:
-  - src/retrieval/graph_search.py (for structural validation)
+  - src/retrieval/graph_search.py (for structural validation via AGE)
   - config/retrieval.yaml (for weights and thresholds)
 """
 
@@ -61,22 +65,22 @@ def fuse_and_validate(
     vector_results: list[FieldCandidate],
     graph_results: list[FieldCandidate],
     fewshot_results: list[FieldCandidate],
-    neo4j_driver,
+    pg_conn,
 ) -> RetrievalResult:
     """Complete retrieval fusion pipeline.
 
     Steps:
       1. RRF merge three ranked lists
       2. Take top-N fused candidates
-      3. Structural validation: Neo4j checks which explores contain ALL candidates
+      3. Structural validation: AGE Cypher checks which explores contain ALL candidates
       4. Score each explore by coverage + aggregate RRF score
       5. Decision: proceed / disambiguate / clarify / no_match
 
     Args:
-        vector_results: From Vertex AI Search.
-        graph_results: From Neo4j.
+        vector_results: From pgvector similarity search.
+        graph_results: From AGE graph traversal.
         fewshot_results: From FAISS golden queries.
-        neo4j_driver: For structural validation gate.
+        pg_conn: Active psycopg connection (pgvector + AGE on same PG instance).
 
     Returns:
         RetrievalResult with action and selected fields.

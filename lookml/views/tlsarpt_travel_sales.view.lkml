@@ -1,5 +1,5 @@
 # Travel & Lifestyle Sales — TLS booking and revenue data
-# Source: tlsarpt_travel_sales table
+# Source: axp-lumid.dw.tlsarpt_travel_sales
 # Business Terms: Gross TLS Sales, Travel Verticals, Hotel Cost Per Night, Air Trip Type
 #
 # ┌─────────────────────────────────────────────────────────────────────┐

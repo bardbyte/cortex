@@ -1,5 +1,5 @@
 # Card Issuance — New card events and campaign tracking
-# Source: gihr_card_issuance table
+# Source: axp-lumid.dw.gihr_card_issuance
 # Business Terms: Campaign Not CM Initiated
 #
 # ┌─────────────────────────────────────────────────────────────────────┐
