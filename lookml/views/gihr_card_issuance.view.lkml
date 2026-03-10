@@ -36,6 +36,15 @@ view: gihr_card_issuance {
     tags: ["cluster_key"]
   }
 
+  # [INFERRED] — org_id for organizational hierarchy join. Verify with Ayush.
+  dimension: org_id {
+    type: string
+    sql: ${TABLE}.org_id ;;
+    label: "Organization ID"
+    description: "Organization identifier linking to ACE organization hierarchy. Used for divisional breakdown of card issuance. Also known as: organization code, org identifier, division ID."
+    hidden: yes
+  }
+
   # ---- Campaign Details ----
 
   dimension: cmgn_cd {

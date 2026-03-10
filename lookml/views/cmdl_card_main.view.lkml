@@ -25,7 +25,19 @@
 # The auto-generated view in the Looker instance has every column.
 
 view: cmdl_card_main {
-  sql_table_name: `@{PROJECT_ID}.@{DATASET}.cmdl_card_main` ;;
+  # SNAPSHOT FIX: cmdl_card_main is a daily snapshot table — one row per cust_ref
+  # per partition_date. Joining on cust_ref alone causes fanout (1 fact row × N snapshot days).
+  # Fix: Use latest snapshot only. Demographics are treated as "current state."
+  # If point-in-time demographics are needed later, revert to sql_table_name and
+  # add partition alignment in model sql_on clauses.
+  derived_table: {
+    sql: SELECT * FROM `@{PROJECT_ID}.@{DATASET}.cmdl_card_main`
+         WHERE partition_date = (
+           SELECT MAX(partition_date)
+           FROM `@{PROJECT_ID}.@{DATASET}.cmdl_card_main`
+         ) ;;
+    datagroup_trigger: daily_refresh
+  }
 
   # ---- Partition & Clustering (BQ Optimization) ----
 

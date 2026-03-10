@@ -157,7 +157,8 @@ explore: finance_cardmember_360 {
 
   join: risk_indv_cust {
     type: left_outer
-    relationship: one_to_one
+    # risk has multiple rows per cust_ref (one per rel_type: AA, etc.)
+    relationship: one_to_many
     sql_on: ${finance_cardmember_360.cust_ref} = ${risk_indv_cust.cust_ref} ;;
   }
 
@@ -419,13 +420,15 @@ explore: finance_customer_risk {
 
   join: cmdl_card_main {
     type: left_outer
-    relationship: one_to_one
+    # risk has multiple rows per cust_ref → many risk rows to one cmdl row
+    relationship: many_to_one
     sql_on: ${finance_customer_risk.cust_ref} = ${cmdl_card_main.cust_ref} ;;
   }
 
   join: custins_customer_insights_cardmember {
     type: left_outer
-    relationship: one_to_one
+    # risk has multiple rows per cust_ref → many risk rows to one custins row
+    relationship: many_to_one
     sql_on: ${finance_customer_risk.cust_ref} = ${custins_customer_insights_cardmember.cust_ref} ;;
   }
 

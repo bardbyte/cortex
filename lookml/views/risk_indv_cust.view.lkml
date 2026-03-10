@@ -30,8 +30,16 @@ view: risk_indv_cust {
     tags: ["partition_key"]
   }
 
-  dimension: cust_ref {
+  # Composite PK: cust_ref is NOT unique — multiple rows per rel_type.
+  # Looker requires a single primary_key field, so we concatenate.
+  dimension: risk_pk {
     primary_key: yes
+    type: string
+    sql: CONCAT(${TABLE}.cust_ref, '|', ${TABLE}.rel_type) ;;
+    hidden: yes
+  }
+
+  dimension: cust_ref {
     type: string
     sql: ${TABLE}.cust_ref ;;
     label: "Customer Reference"
