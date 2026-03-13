@@ -1,14 +1,56 @@
 services:
-  neo4j:
-    image: neo4j:5.26-community
-    ports:
-      - "7474:7474"   # Browser
-      - "7687:7687"   # Bolt
+  pgage:
+    build: .
+    image: artifactory.aexp.com/dockerproxy/apache/age:latest
+    container_name: pgage
+    restart: always
     environment:
-      NEO4J_AUTH: neo4j/password
-      NEO4J_PLUGINS: '["apoc"]'
+      - POSTGRES_USER=postgres
+      - POSTGRES_DB=postgres
+      - POSTGRES_HOST_AUTH_METHOD=trust
+    networks:
+      - pgage
+    ports:
+      - "5432:5432"
     volumes:
-      - neo4j_data:/data
+      - pgage-data:/var/lib/postgresql
+
+  ageviewer:
+    image: artifactory.aexp.com/dockerproxy/bitnine/ageviewer:latest
+    container_name: ageviewer
+    restart: always
+    depends_on:
+      - pgage
+    environment:
+      - AGE_HOST=pgage
+      - AGE_PORT=5432
+      - AGE_USER=postgres
+    networks:
+      - pgage
+    ports:
+      - "3801:3001"
+
+  cortex-setup:
+    build: .
+    profiles:
+      - tools
+    depends_on:
+      - pgage
+    env_file: .env
+    environment:
+      - POSTGRES_HOST=pgage
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    networks:
+      - pgage
+    command: ["python", "examples/verify_setup.py"]
 
 volumes:
-  neo4j_data:
+  pgage-data:
+    name: pgage-data
+
+networks:
+  pgage:
+    name: pgage

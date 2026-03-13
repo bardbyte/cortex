@@ -1,145 +1,414 @@
-"""Vector search via pgvector (PostgreSQL extension).
+"""Entity extraction and vector field matching for retrieval.
 
-Finds LookML fields whose descriptions are semantically similar to the user's query.
+This module implements a query-to-entities retrieval flow:
+  1) Extract structured entities from natural language using LLM.
+  2) Normalize extracted entities to reduce model drift.
+  3) Generate embeddings for measures/dimensions.
+  4) Search pgvector 'field_embeddings' for top-k similar fields.
+  5) Return output with candidates and filters for downstream SQL planning.
 
-How it works:
-  INDEXING (offline, triggered on LookML deploy):
-    - One document per field (NOT per-view, NOT per-explore)
-    - Each doc = field name + description + explore/view context + taxonomy synonyms
-    - Structured columns for filtering: field_type, view, explore, model
-    - Embedding model: text-embedding-005 (768-dim, fine-tunable for Amex terminology)
-    - Index type: HNSW (m=16, ef_construction=64) for approximate nearest neighbor
-
-  QUERYING (runtime, <100ms):
-    - Embed extracted entities (e.g. "total spend", "merchant category")
-    - pgvector cosine distance search for top-K similar fields
-    - Return FieldCandidate list ranked by cosine similarity
-
-Why pgvector over Vertex AI Search (see ADR-004):
-    - Approved within Amex — no cloud API exception needed
-    - Runs locally — no network egress, no cloud dependency
-    - Same PostgreSQL instance as AGE graph — operational simplicity
-    - SQL-based queries — team already knows SQL
-    - Can combine vector + graph queries in a single SQL statement
-
-Schema (PostgreSQL):
-    CREATE EXTENSION IF NOT EXISTS vector;
-
-    CREATE TABLE field_embeddings (
-        id              SERIAL PRIMARY KEY,
-        field_key       TEXT UNIQUE NOT NULL,   -- "finance.finance_cardmember_360.custins.billed_business"
-        embedding       vector(768) NOT NULL,   -- text-embedding-005 output
-        content         TEXT NOT NULL,           -- the text that was embedded
-        field_name      TEXT NOT NULL,
-        field_type      TEXT NOT NULL,           -- "dimension" | "measure"
-        measure_type    TEXT,                    -- "sum" | "average" | "count_distinct" | null
-        view_name       TEXT NOT NULL,
-        explore_name    TEXT NOT NULL,
-        model_name      TEXT NOT NULL,
-        label           TEXT,
-        group_label     TEXT,
-        tags            TEXT[],
-        hidden          BOOLEAN DEFAULT FALSE,
-        created_at      TIMESTAMPTZ DEFAULT NOW()
-    );
-
-    CREATE INDEX ON field_embeddings
-        USING hnsw (embedding vector_cosine_ops)
-        WITH (m = 16, ef_construction = 64);
-
-Why per-field chunking?
-  Per-view returns 50 irrelevant fields alongside the 2 you need.
-  Per-field lets retrieval pinpoint exact matches. Precision > recall here.
-
-What to implement:
-  1. build_field_embeddings() — parse LookML, enrich with taxonomy, create rows
-  2. index_to_pgvector() — INSERT into field_embeddings table
-  3. search() — query pgvector, return ranked FieldCandidates
-
-Dependencies:
-  - psycopg[binary] (PostgreSQL driver with pgvector support)
-  - pgvector (Python helper for vector type)
-  - lkml (LookML parser)
-  - Taxonomy YAML files for synonym enrichment (src/taxonomy/)
-  - An embedding endpoint (SafeChain → text-embedding-005)
+Usage:
+    python -m src.retrieval.vector
 """
 
-from src.retrieval.models import FieldCandidate
+from __future__ import annotations
 
-# ─── QUERY TEMPLATES ───────────────────────────────────────
+import json
+import logging
+import os
+import time
+from dataclasses import dataclass
+from typing import Any
+from pathlib import Path
 
-# Core similarity search — returns top-K fields by cosine distance
-VECTOR_SEARCH_SQL = """
-SELECT field_key, field_name, field_type, view_name, explore_name,
-       model_name, label, group_label, tags, content,
-       1 - (embedding <=> %(query_embedding)s::vector) AS similarity
-FROM field_embeddings
-WHERE hidden = FALSE
-  AND model_name = %(model_name)s
-ORDER BY embedding <=> %(query_embedding)s::vector
-LIMIT %(top_k)s;
+from dotenv import find_dotenv, load_dotenv
+from sqlalchemy import text
+from sqlalchemy.types import UserDefinedType
+
+
+class Vector(UserDefinedType):
+    """Custom SQLAlchemy type for pgvector."""
+    cache_ok = True
+    name = "vector"
+
+
+from safechain.lct import model
+from config.constants import EMBED_MODEL_IDX, SQL_SEARCH_SIMILAR_FIELDS
+from src.connectors.postgres_age_client import get_engine
+
+logger = logging.getLogger(__name__)
+
+
+def _bootstrap_environment() -> None:
+    """Load .env and ensure CONFIG_PATH is available for safechain/ee_config."""
+    load_dotenv(find_dotenv())
+    if not os.getenv("CONFIG_PATH"):
+        repo_root = Path(__file__).resolve().parents[2]
+        default_config_path = repo_root / "config.yml"
+        os.environ["CONFIG_PATH"] = str(default_config_path)
+        logger.info("[retrieval.vector] CONFIG_PATH set to: %s", default_config_path)
+    else:
+        logger.info("[retrieval.vector] CONFIG_PATH already set to: %s", os.getenv("CONFIG_PATH"))
+
+
+_bootstrap_environment()
+
+
+@dataclass
+class ExtractedEntity:
+    """Represents an extracted entity from user query."""
+    entity_type: str
+    raw_text: str
+    embedding: list[float] | None = None
+
+
+@dataclass
+class FieldMatch:
+    """Represents a matched field from the database."""
+    field_key: str
+    field_name: str
+    label: str | None
+    explore_name: str
+    view_name: str
+    similarity: float
+    field_type: str | None = None
+    measure_type: str | None = None
+
+
+@dataclass
+class EntityCandidate:
+    """Represents a candidate field match for an entity."""
+    explore: str
+    field_key: str
+    field_name: str
+    similarity: float
+
+
+@dataclass
+class Entity:
+    """Represents an entity in the structured output format."""
+    id: str
+    type: str
+    weight: float
+    candidates: list[EntityCandidate] | None = None
+    operators: list[str] | None = None
+    values: list[str] | None = None
+
+
+@dataclass
+class ExtractedEntities:
+    """Structured entity extraction result."""
+    measures: list[str]
+    dimensions: list[str]
+    time_range: str | None
+    filters: list[dict[str, Any]]
+
+
+class EntityExtractor:
+    """Extract entities from user queries and match them to database fields."""
+
+    ENTITY_EXTRACTION_PROMPT = """You are an expert at extracting structured entities from natural language queries about business data.
+
+Given a user question, extract:
+1. measures: KPIs or numerics being requested
+2. dimensions: categories/attributes being requested (do not include filter values here)
+3. time_range: time expression if present
+4. filters: explicit filter conditions
+
+For filters:
+  - Use "field_hint" to describe the conceptual field
+  - Extract raw values exactly as written
+  - Do NOT add partition filters
+  - Do NOT duplicate filter values in dimensions
+  - If there is no explicit aggregation intent (count/sum/avg/total), prefer returning dimensions + filters and keep measures empty
+
+Return ONLY valid JSON.
+
+Example:
+  User: "Customer counts for Millennial customers last quarter"
+  Output:
+  {{
+    "measures": ["customer count"],
+    "dimensions": ["generation"],
+    "time_range": "last quarter",
+    "filters": [
+        {{"field_hint": "generation",
+         "values": ["Millennial"],
+         "operator": "="}}
+    ]
+  }}
+
+Now extract entities from this query:
+  User: "{query}"
+  Output:
 """
 
-# Unscoped search (when model is not yet identified)
-VECTOR_SEARCH_UNSCOPED_SQL = """
-SELECT field_key, field_name, field_type, view_name, explore_name,
-       model_name, label, group_label, tags, content,
-       1 - (embedding <=> %(query_embedding)s::vector) AS similarity
-FROM field_embeddings
-WHERE hidden = FALSE
-ORDER BY embedding <=> %(query_embedding)s::vector
-LIMIT %(top_k)s;
-"""
+    METRIC_INTENT_TERMS = {
+        "count", "number", "numbers", "total", "sum", "average",
+        "maximum", "max", "minimum", "min", "rate", "ratio", "percent",
+    }
+
+    GENERIC_CUSTOMER_MEASURES = {
+        "customer count",
+        "customer's count",
+    }
+
+    def __init__(self, llm_model_idx: str = EMBED_MODEL_IDX, embedding_model_idx: str = EMBED_MODEL_IDX):
+        self.llm_model_idx = llm_model_idx
+        self.embedding_model_idx = embedding_model_idx
+        logger.info("Initializing LLM model '%s' for entity extraction", llm_model_idx)
+        self.llm_client = model(llm_model_idx)
+        logger.info("Initializing embedding model '%s' for entity embedding", embedding_model_idx)
+        self.embedding_client = model(embedding_model_idx)
+
+    def _has_metric_intent(self, query: str) -> bool:
+        lowered = query.lower()
+        return any(term in lowered for term in self.METRIC_INTENT_TERMS)
+
+    def _normalize_terms(self, query: str, extracted: ExtractedEntities) -> ExtractedEntities:
+        logger.info("Normalizing entities for query '%s'", query)
+        logger.info(
+            "Extracted: measures=%d, dimensions=%d, filters=%d",
+            len(extracted.measures),
+            len(extracted.dimensions),
+            len(extracted.filters),
+        )
+
+        dimensions = list(extracted.dimensions)
+        measures = list(extracted.measures)
+
+        has_metric_intent = self._has_metric_intent(query)
+        query_lower = query.lower()
+
+        if not dimensions and ("customer" in query_lower or "customers" in query_lower):
+            dimensions.append("customer")
+
+        if has_metric_intent and not measures:
+            for term in self.GENERIC_CUSTOMER_MEASURES:
+                if term in query_lower:
+                    measures.append(term)
+                    break
+
+        if has_metric_intent and not measures:
+            measures.append("count")
+
+        return ExtractedEntities(
+            measures=measures,
+            dimensions=dimensions,
+            time_range=extracted.time_range,
+            filters=extracted.filters,
+        )
+
+    def extract_entities(self, query: str) -> ExtractedEntities:
+        prompt = self.ENTITY_EXTRACTION_PROMPT.format(query=query)
+        try:
+            json_str = self.llm_client.invoke(prompt)
+            entities_dict = json.loads(json_str)
+
+            measures = entities_dict.get("measures")
+            if measures is None:
+                measures = entities_dict.get("Metrics")
+            if measures is None:
+                measures = entities_dict.get("metrics")
+            if measures is None:
+                measures = []
+
+            dimensions = entities_dict.get("dimensions")
+            if dimensions is None:
+                dimensions = entities_dict.get("Dimensions")
+            if dimensions is None:
+                dimensions = []
+
+            time_range = entities_dict.get("time_range")
+            if time_range is None:
+                time_range = entities_dict.get("Time_range")
+
+            filters = entities_dict.get("filters")
+            if filters is None:
+                filters = entities_dict.get("Filters")
+            if filters is None:
+                filters = []
+
+            return ExtractedEntities(
+                measures=measures or [],
+                dimensions=dimensions or [],
+                time_range=time_range,
+                filters=filters or [],
+            )
+        except json.JSONDecodeError as exc:
+            logger.error("Failed to parse LLM response as JSON: %s", exc)
+            return ExtractedEntities(measures=[], dimensions=[], time_range=None, filters=[])
+        except Exception as exc:
+            logger.error("Error during entity extraction: %s", exc)
+            return ExtractedEntities(measures=[], dimensions=[], time_range=None, filters=[])
+
+    def embed_text(self, text: str) -> list[float]:
+        logger.info("Generating embedding for text snippet (len=%d)", len(text))
+        return self.embedding_client.embed_query(text)
+
+    def search_similar_fields(self, entity_text: str, embedding: list[float], limit: int = 10) -> list[FieldMatch]:
+        engine = get_engine()
+        embedding_literal = "[" + ", ".join(str(x) for x in embedding) + "]"
+
+        with engine.connect() as conn:
+            result = conn.execute(
+                text(SQL_SEARCH_SIMILAR_FIELDS).bindparams(
+                    embedding=embedding_literal,
+                    limit=limit,
+                )
+            )
+            rows = result.fetchall()
+
+        results = [
+            FieldMatch(
+                field_key=row[0],
+                field_name=row[1],
+                label=row[2],
+                explore_name=row[3],
+                view_name=row[4],
+                field_type=row[5],
+                measure_type=row[6],
+                similarity=float(row[7]),
+            )
+            for row in rows
+        ]
+        return results
+
+    def process_query(self, query: str, top_k: int = 5) -> dict[str, Any]:
+        logger.info("Starting process_query for query='%s' with top_k=%d", query, top_k)
+        extracted = self.extract_entities(query)
+        extracted = self._normalize_terms(query, extracted)
+
+        entities: list[dict[str, Any]] = []
+        entity_id_counter = 1
+
+        for measure_text in extracted.measures:
+            logger.info("Processing measure entity '%s'", measure_text)
+            embedding = self.embed_text(measure_text)
+            matches = self.search_similar_fields(measure_text, embedding, limit=top_k)
+            candidates = [
+                {
+                    "explore": match.explore_name,
+                    "field_key": match.field_key,
+                    "field_name": match.field_name,
+                    "label": match.label,
+                    "view_name": match.view_name,
+                    "measure_type": match.measure_type,
+                    "similarity": match.similarity,
+                }
+                for match in matches
+            ]
+            entities.append({
+                "id": f"E{entity_id_counter}",
+                "type": "measure",
+                "name": measure_text,
+                "weight": 1.0,
+                "candidates": candidates,
+            })
+            entity_id_counter += 1
+
+        for dimension_text in extracted.dimensions:
+            logger.info("Processing dimension entity '%s'", dimension_text)
+            enriched_text = f"{dimension_text}. Also known as: attribute, segment, grouping"
+            embedding = self.embed_text(enriched_text)
+            matches = self.search_similar_fields(dimension_text, embedding, limit=top_k)
+            candidates = [
+                {
+                    "explore": match.explore_name,
+                    "field_key": match.field_key,
+                    "field_name": match.field_name,
+                    "label": match.label,
+                    "view_name": match.view_name,
+                    "measure_type": match.measure_type,
+                    "similarity": match.similarity,
+                }
+                for match in matches
+            ]
+            entities.append({
+                "id": f"E{entity_id_counter}",
+                "type": "dimension",
+                "name": dimension_text,
+                "weight": 1.0,
+                "candidates": candidates,
+            })
+            entity_id_counter += 1
+
+        for filter_item in extracted.filters:
+            logger.info("Processing filter entity '%s'", filter_item)
+            entities.append({
+                "id": f"E{entity_id_counter}",
+                "type": "filter",
+                "name": filter_item.get("field_hint", "filter"),
+                "operator": filter_item.get("operator", "IN"),
+                "values": filter_item.get("values", []),
+                "weight": 0.8,
+            })
+            entity_id_counter += 1
+
+        if extracted.time_range:
+            logger.info("Processing time range filter '%s'", extracted.time_range)
+            entities.append({
+                "id": f"E{entity_id_counter}",
+                "type": "time_range",
+                "name": "time_range",
+                "operator": "IN",
+                "values": [extracted.time_range],
+                "weight": 0.8,
+            })
+
+        logger.info("process_query complete: total_entities=%d", len(entities))
+        return {"query": query, "entities": entities}
+
+    def format_results(self, results: dict[str, Any]) -> str:
+        output = []
+        output.append(f"\nQUERY: {results['query']}")
+        output.append("=" * 80)
+
+        entities = results.get("entities", [])
+        for entity in entities:
+            if entity["type"] in ("measure", "dimension"):
+                output.append(f"\n  {entity['name']}  (Weight: {entity['weight']:.1f})")
+                output.append(f"    Type: {entity['type'].upper()}")
+                if entity.get("candidates"):
+                    for rank, candidate in enumerate(entity["candidates"], start=1):
+                        output.append(f"     Rank {rank:<3d} {'Field':.<28} {'Explore':.<28} {'View':.<28} {'Measure Type':.<14} {'Similarity':.>12}")
+                        output.append(
+                            f"             {candidate.get('field_name', ''):.<28} "
+                            f"{candidate.get('explore', ''):.<28} "
+                            f"{candidate.get('view_name', ''):.<28} "
+                            f"{(candidate.get('measure_type') or ''):.<14} "
+                            f"{candidate.get('similarity', 0.0):.4f}"
+                        )
+                else:
+                    output.append("     (No candidates found)")
+            elif entity["type"] == "filter":
+                output.append(f"\n  {entity['name']}  (Weight: {entity['weight']:.1f})")
+                output.append(f"    FILTER: {entity.get('name', '')}")
+                output.append(f"    Operator: {entity.get('operator', 'IN')}")
+                output.append(f"    Values: {entity.get('values', [])}")
+
+        output.append("\n" + "=" * 80)
+        return "\n".join(output)
 
 
-# ─── INTERFACE ─────────────────────────────────────────────
+def _demo_run() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(levelnames)s %(name)s: %(message)s")
+
+    print("\nEntity Extractor Demo (src.retrieval.vector)")
+    print("=" * 80)
+    print("[1/4] Initializing extractor...")
+    extractor = EntityExtractor()
+
+    sample_query = "Total billed business by generation"
+    print(f"[2/4] Running query: {sample_query}")
+    results = extractor.process_query(sample_query, top_k=5)
+
+    print("[3/4] Rendering formatted output...")
+    print(extractor.format_results(results))
+
+    print(f"[4/4] JSON output:")
+    print(json.dumps(results, indent=2))
 
 
-def build_field_embeddings(
-    lookml_models: list, taxonomy: dict | None = None
-) -> list[dict]:
-    """Build pgvector rows from parsed LookML.
-
-    Args:
-        lookml_models: Parsed LookML model objects (from lkml library).
-        taxonomy: Optional {field_name: TaxonomyEntry} for synonym enrichment.
-
-    Returns:
-        List of dicts ready for INSERT into field_embeddings table.
-        Each dict:
-          {
-            "field_key": "model.explore.view.field",
-            "content": "field_name is a [type] in [view], accessible through [explore]...",
-            "field_name": "billed_business",
-            "field_type": "dimension",
-            "view_name": "custins_customer_insights_cardmember",
-            "explore_name": "finance_cardmember_360",
-            "model_name": "finance",
-            ...
-          }
-
-    Note: Embedding generation (content → vector) is done separately via
-    SafeChain's embedding endpoint before INSERT.
-    """
-    raise NotImplementedError
-
-
-def search(
-    pg_conn,
-    query_embedding: list[float],
-    *,
-    top_k: int = 20,
-    model_name: str | None = None,
-) -> list[FieldCandidate]:
-    """Search pgvector for semantically similar LookML fields.
-
-    Args:
-        pg_conn: Active psycopg connection to PostgreSQL with pgvector.
-        query_embedding: 768-dim embedding of the search query.
-        top_k: Number of results to return.
-        model_name: Optional model name to scope results (recommended).
-
-    Returns:
-        FieldCandidate list ranked by cosine similarity.
-    """
-    raise NotImplementedError
+if __name__ == "__main__":
+    _demo_run()
