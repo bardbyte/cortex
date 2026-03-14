@@ -111,4 +111,32 @@ view: risk_indv_cust {
     description: "Average risk ranking across the customer population. Also known as: mean risk score, avg risk rating."
     value_format_name: decimal_2
   }
+
+  # ---- Min/Max (S6: Extremes) ----
+
+  measure: min_risk_rank {
+    type: min
+    sql: ${rnk_indv_cust} ;;
+    label: "Minimum Risk Rank"
+    description: "Lowest risk ranking (best risk score) in the population. Lower values indicate lower risk. Also known as: best risk score, lowest risk, safest customers."
+    value_format_name: decimal_0
+  }
+
+  measure: max_risk_rank {
+    type: max
+    sql: ${rnk_indv_cust} ;;
+    label: "Maximum Risk Rank"
+    description: "Highest risk ranking (worst risk score) in the population. Higher values indicate higher risk. Also known as: worst risk score, highest risk, riskiest customers."
+    value_format_name: decimal_0
+  }
+
+  # ---- Derived Rates (S5: Ratio) ----
+
+  measure: revolving_customer_rate {
+    type: number
+    sql: SAFE_DIVIDE(${revolving_customer_count}, ${total_risk_customers}) ;;
+    label: "Revolving Customer Rate"
+    description: "Percentage of customers with revolving balances (AA relationship type). Alternative to revolve_index for simpler interpretation. Also known as: revolver rate, revolving percentage, balance carry rate."
+    value_format_name: percent_2
+  }
 }

@@ -26,6 +26,13 @@ dev = [
     "jupyter>=1.0.0",
     "ipykernel>=6.29.0",
 ]
+local = [
+    "sentence-transformers>=3.0.0",
+    "psycopg2-binary>=2.9.0",
+    "sqlalchemy>=2.0.0",
+    "anthropic>=0.39.0",
+    "torch>=2.0.0",
+]
 
 [build-system]
 requires = ["setuptools>=75.0"]

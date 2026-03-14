@@ -134,4 +134,48 @@ view: fin_card_member_merchant_profitability {
     description: "Count of unique card members who dined at restaurants (positive spend at restaurant merchants). Also known as: restaurant customer count, dining at restaurant count, diners."
     value_format_name: decimal_0
   }
+
+  # ---- Min/Max (S6: Extremes) ----
+
+  measure: min_roc_global {
+    type: min
+    sql: ${roc_test_global} ;;
+    label: "Minimum ROC (Global)"
+    description: "Lowest Return on Capital across card member-merchant relationships. Identifies least profitable relationships. Also known as: min ROC, lowest profitability, worst performing ROC."
+    value_format_name: decimal_4
+  }
+
+  measure: max_roc_global {
+    type: max
+    sql: ${roc_test_global} ;;
+    label: "Maximum ROC (Global)"
+    description: "Highest Return on Capital across card member-merchant relationships. Identifies most profitable relationships. Also known as: max ROC, peak profitability, best performing ROC, top ROC."
+    value_format_name: decimal_4
+  }
+
+  measure: min_merchant_spend {
+    type: min
+    sql: ${tot_disc_bill_vol_usd_am} ;;
+    label: "Minimum Merchant Spend"
+    description: "Lowest individual merchant spend amount. Also known as: min merchant billing, smallest transaction."
+    value_format_name: usd
+  }
+
+  measure: max_merchant_spend {
+    type: max
+    sql: ${tot_disc_bill_vol_usd_am} ;;
+    label: "Maximum Merchant Spend"
+    description: "Highest individual merchant spend amount. Also known as: max merchant billing, largest transaction, biggest spend."
+    value_format_name: usd
+  }
+
+  # ---- Derived (S5: Ratio) ----
+
+  measure: dining_penetration {
+    type: number
+    sql: SAFE_DIVIDE(${dining_customer_count}, COUNT(DISTINCT ${cust_ref})) ;;
+    label: "Dining Penetration"
+    description: "Percentage of card members who dined at restaurants. Also known as: restaurant penetration, dining rate, share of diners."
+    value_format_name: percent_2
+  }
 }

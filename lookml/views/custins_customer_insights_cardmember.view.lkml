@@ -307,4 +307,82 @@ view: custins_customer_insights_cardmember {
     description: "Count of card members who have at least one authorized user on their account. Also known as: customers with authorized agents, supplementary card holders, accounts with additional members."
     value_format_name: decimal_0
   }
+
+  # ---- Min/Max Measures (S6: Extremes) ----
+
+  measure: min_billed_business {
+    type: min
+    sql: ${billed_business} ;;
+    label: "Minimum Billed Business"
+    description: "Lowest billed business amount across card members. Also known as: min spend, lowest billing, minimum charge, smallest spend."
+    value_format_name: usd
+  }
+
+  measure: max_billed_business {
+    type: max
+    sql: ${billed_business} ;;
+    label: "Maximum Billed Business"
+    description: "Highest billed business amount across card members. Also known as: max spend, peak billing, highest charge, top spender amount, largest spend."
+    value_format_name: usd
+  }
+
+  # ---- Lifecycle Segment Counts (S2: Conditional Aggregation) ----
+
+  measure: new_customer_count {
+    type: count_distinct
+    sql: CASE WHEN ${basic_cust_noa} = 'New' THEN ${cust_ref} END ;;
+    label: "New Customers"
+    description: "Count of card members classified as New (tenure <= 13 months with active account). Also known as: new members, recent acquisitions, new accounts, newly acquired customers."
+    value_format_name: decimal_0
+  }
+
+  measure: organic_customer_count {
+    type: count_distinct
+    sql: CASE WHEN ${basic_cust_noa} = 'Organic' THEN ${cust_ref} END ;;
+    label: "Organic Customers"
+    description: "Count of card members classified as Organic (active with tenure > 13 months). The established customer base. Also known as: existing customers, established members, mature accounts."
+    value_format_name: decimal_0
+  }
+
+  measure: attrited_customer_count {
+    type: count_distinct
+    sql: CASE WHEN ${basic_cust_noa} = 'Attrited' THEN ${cust_ref} END ;;
+    label: "Attrited Customers"
+    description: "Count of card members classified as Attrited (no longer active). Also known as: churned customers, lost customers, attrition count, cancelled members."
+    value_format_name: decimal_0
+  }
+
+  # ---- Derived Rates (S5: Ratio / Derived) ----
+
+  measure: attrition_rate {
+    type: number
+    sql: SAFE_DIVIDE(${attrited_customer_count}, ${total_customers}) ;;
+    label: "Attrition Rate"
+    description: "Percentage of card members who have attrited, calculated as attrited count divided by total customers. Also known as: churn rate, customer loss rate, attrition percentage, cancellation rate."
+    value_format_name: percent_2
+  }
+
+  measure: new_customer_rate {
+    type: number
+    sql: SAFE_DIVIDE(${new_customer_count}, ${total_customers}) ;;
+    label: "New Customer Rate"
+    description: "Percentage of the portfolio that are new customers. Also known as: acquisition rate, new member share, new account percentage."
+    value_format_name: percent_2
+  }
+
+  measure: active_rate_standard {
+    type: number
+    sql: SAFE_DIVIDE(${active_customers_standard}, ${total_customers}) ;;
+    label: "Active Rate (Standard)"
+    description: "Percentage of card members that are active under the standard definition (billed business > $50). Also known as: activation rate, active percentage, engagement rate."
+    value_format_name: percent_2
+  }
+
+  measure: total_discount_revenue {
+    type: sum
+    sql: ${bluebox_discount_revenue} ;;
+    label: "Total Discount Revenue"
+    description: "Sum of discount revenue earned on transactions across card members. Revenue earned from merchant fees. Also known as: total merchant discount, aggregate discount revenue, merchant fee revenue, bluebox revenue."
+    value_format_name: usd
+  }
 }

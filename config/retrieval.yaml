@@ -12,7 +12,7 @@ fusion:
 vector_search:
   top_k: 20            # Results per entity from Vertex AI Search
   embedding_model: "text-embedding-005"
-  embedding_dim: 768
+  embedding_dim: 1024
 
 graph_search:
   max_join_depth: 3    # Max hops for join path traversal

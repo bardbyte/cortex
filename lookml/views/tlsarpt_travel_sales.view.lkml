@@ -180,4 +180,50 @@ view: tlsarpt_travel_sales {
     description: "Average gross value per non-cancelled booking. Also known as: avg transaction value, mean booking amount."
     value_format_name: usd
   }
+
+  # ---- Min/Max (S6: Extremes) ----
+
+  measure: max_booking_value {
+    type: max
+    sql: CASE WHEN NOT ${is_cancelled} THEN ${gross_usd} END ;;
+    label: "Maximum Booking Value"
+    description: "Highest individual non-cancelled booking amount. Also known as: max trip cost, largest booking, most expensive trip, peak booking."
+    value_format_name: usd
+  }
+
+  measure: min_booking_value {
+    type: min
+    sql: CASE WHEN NOT ${is_cancelled} THEN ${gross_usd} END ;;
+    label: "Minimum Booking Value"
+    description: "Lowest individual non-cancelled booking amount. Also known as: min trip cost, smallest booking, cheapest trip."
+    value_format_name: usd
+  }
+
+  # ---- Conditional Counts (S2) ----
+
+  measure: cancelled_booking_count {
+    type: count_distinct
+    sql: CASE WHEN ${is_cancelled} THEN ${booking_id} END ;;
+    label: "Cancelled Bookings"
+    description: "Count of cancelled travel bookings. Also known as: cancellation count, cancelled reservations, cancelled trips."
+    value_format_name: decimal_0
+  }
+
+  # ---- Derived Rates (S5: Ratio) ----
+
+  measure: cancellation_rate {
+    type: number
+    sql: SAFE_DIVIDE(${cancelled_booking_count}, ${total_bookings}) ;;
+    label: "Cancellation Rate"
+    description: "Percentage of travel bookings that were cancelled. Also known as: cancel rate, cancellation percentage, booking cancellation rate."
+    value_format_name: percent_2
+  }
+
+  measure: avg_rooms_per_booking {
+    type: average
+    sql: ${room_count} ;;
+    label: "Average Rooms Per Booking"
+    description: "Average number of rooms per hotel booking. Also known as: avg room count, rooms per reservation."
+    value_format_name: decimal_1
+  }
 }

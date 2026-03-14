@@ -89,8 +89,9 @@ view: gihr_card_issuance {
     datatype: date
     sql: ${TABLE}.issuance_date ;;
     label: "Issuance"
-    description: "Date of card issuance. Also known as: issue date, card issue date, activation date."
+    description: "Date of card issuance. BigQuery partition column — MUST be filtered to avoid full table scan. Also known as: issue date, card issue date, activation date."
     group_label: "Issuance Timeline"
+    tags: ["partition_key"]
   }
 
   # ---- Measures ----

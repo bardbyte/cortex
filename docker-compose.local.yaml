@@ -1,0 +1,33 @@
+# Local development Docker Compose
+# Uses public images (no Amex artifactory dependency)
+# Usage: docker compose -f docker-compose.local.yaml up -d
+services:
+  pgage:
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+    container_name: pgage
+    restart: always
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_DB=postgres
+      - POSTGRES_HOST_AUTH_METHOD=trust
+    networks:
+      - pgage
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgage-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pgage-data:
+    name: pgage-data-local
+
+networks:
+  pgage:
+    name: pgage-local

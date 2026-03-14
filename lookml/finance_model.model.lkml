@@ -151,7 +151,10 @@ explore: finance_cardmember_360 {
 
   join: cmdl_card_main {
     type: left_outer
-    relationship: one_to_one
+    # custins has one row per cust_ref per partition_date (up to 365 rows per customer).
+    # cmdl_card_main is a derived table (latest snapshot = 1 row per cust_ref).
+    # So the join is many custins rows → one cmdl row.
+    relationship: many_to_one
     sql_on: ${finance_cardmember_360.cust_ref} = ${cmdl_card_main.cust_ref} ;;
   }
 

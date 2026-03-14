@@ -253,4 +253,58 @@ view: cmdl_card_main {
     description: "Average air services spend in the last 90 days per card member. Also known as: avg airline spend, mean air travel spend."
     value_format_name: usd
   }
+
+  # ---- Conditional Counts (S2) ----
+
+  measure: apple_pay_customer_count {
+    type: count_distinct
+    sql: CASE WHEN ${apple_pay_wallet_flag} = 'Y' THEN ${cust_ref} END ;;
+    label: "Apple Pay Customers"
+    description: "Count of card members enrolled in Apple Pay digital wallet. Also known as: digital wallet users, Apple Pay count, mobile pay users, contactless users."
+    value_format_name: decimal_0
+  }
+
+  measure: basic_card_count {
+    type: count_distinct
+    sql: CASE WHEN ${basic_supp_in} = 'B' THEN ${cust_ref} END ;;
+    label: "Basic Card Members"
+    description: "Count of primary card holders (basic cards, not supplementary). Also known as: primary cards, basic card count, primary members."
+    value_format_name: decimal_0
+  }
+
+  measure: supplementary_card_count {
+    type: count_distinct
+    sql: CASE WHEN ${basic_supp_in} = 'S' THEN ${cust_ref} END ;;
+    label: "Supplementary Card Members"
+    description: "Count of supplementary/authorized user card holders. Also known as: secondary cards, authorized user count, supplementary members, additional cards."
+    value_format_name: decimal_0
+  }
+
+  # ---- Derived Rates (S5: Ratio) ----
+
+  measure: apple_pay_penetration {
+    type: number
+    sql: SAFE_DIVIDE(${apple_pay_customer_count}, ${total_card_members}) ;;
+    label: "Apple Pay Penetration"
+    description: "Percentage of card members enrolled in Apple Pay digital wallet. Also known as: digital wallet penetration, Apple Pay adoption rate, mobile pay rate."
+    value_format_name: percent_2
+  }
+
+  measure: supplementary_card_rate {
+    type: number
+    sql: SAFE_DIVIDE(${supplementary_card_count}, ${total_card_members}) ;;
+    label: "Supplementary Card Rate"
+    description: "Percentage of card members who are supplementary/authorized users. Also known as: authorized user rate, secondary card percentage."
+    value_format_name: percent_2
+  }
+
+  # ---- Min/Max (S6: Extremes) ----
+
+  measure: max_air_services_spend_90d {
+    type: max
+    sql: ${air_srvc_spend_90_day} ;;
+    label: "Max Air Services Spend (90d)"
+    description: "Highest air services spend in the last 90 days across card members. Also known as: max airline spend, top air travel spender."
+    value_format_name: usd
+  }
 }

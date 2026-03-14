@@ -3,7 +3,7 @@
 This module implements a query-to-entities retrieval flow:
   1) Extract structured entities from natural language using LLM.
   2) Normalize extracted entities to reduce model drift.
-  3) Generate embeddings for measures/dimensions.
+  3) Generate embeddings for measures/dimensions with BGE instruction prefix.
   4) Search pgvector 'field_embeddings' for top-k similar fields.
   5) Return output with candidates and filters for downstream SQL planning.
 
@@ -32,8 +32,14 @@ class Vector(UserDefinedType):
     name = "vector"
 
 
-from safechain.lct import model
-from config.constants import EMBED_MODEL_IDX, SQL_SEARCH_SIMILAR_FIELDS
+from src.adapters.model_adapter import get_model
+from config.constants import (
+    LLM_MODEL_IDX,
+    EMBED_MODEL_IDX,
+    BGE_QUERY_PREFIX,
+    SQL_SEARCH_SIMILAR_FIELDS,
+    SQL_SEARCH_SIMILAR_FIELDS_BY_TYPE,
+)
 from src.connectors.postgres_age_client import get_engine
 
 logger = logging.getLogger(__name__)
@@ -146,6 +152,7 @@ Now extract entities from this query:
     METRIC_INTENT_TERMS = {
         "count", "number", "numbers", "total", "sum", "average",
         "maximum", "max", "minimum", "min", "rate", "ratio", "percent",
+        "how many", "highest", "lowest", "top",
     }
 
     GENERIC_CUSTOMER_MEASURES = {
@@ -153,13 +160,13 @@ Now extract entities from this query:
         "customer's count",
     }
 
-    def __init__(self, llm_model_idx: str = EMBED_MODEL_IDX, embedding_model_idx: str = EMBED_MODEL_IDX):
+    def __init__(self, llm_model_idx: str = LLM_MODEL_IDX, embedding_model_idx: str = EMBED_MODEL_IDX):
         self.llm_model_idx = llm_model_idx
         self.embedding_model_idx = embedding_model_idx
         logger.info("Initializing LLM model '%s' for entity extraction", llm_model_idx)
-        self.llm_client = model(llm_model_idx)
-        logger.info("Initializing embedding model '%s' for entity embedding", embedding_model_idx)
-        self.embedding_client = model(embedding_model_idx)
+        self.llm_client = get_model(llm_model_idx)
+        logger.info("Initializing embedding model '%s' for vector search", embedding_model_idx)
+        self.embedding_client = get_model(embedding_model_idx)
 
     def _has_metric_intent(self, query: str) -> bool:
         lowered = query.lower()
@@ -242,21 +249,46 @@ Now extract entities from this query:
             logger.error("Error during entity extraction: %s", exc)
             return ExtractedEntities(measures=[], dimensions=[], time_range=None, filters=[])
 
-    def embed_text(self, text: str) -> list[float]:
-        logger.info("Generating embedding for text snippet (len=%d)", len(text))
+    def embed_text(self, text: str, is_query: bool = True) -> list[float]:
+        """Generate embedding with BGE instruction prefix for queries.
+
+        BGE-large-en-v1.5 was trained with asymmetric instructions:
+        - Queries need prefix: "Represent this sentence for searching relevant passages: "
+        - Documents do NOT get a prefix (they're embedded as-is)
+        Omitting the prefix on queries reduces accuracy by 2-5%.
+        """
+        if is_query:
+            text = BGE_QUERY_PREFIX + text
+        logger.info("Generating embedding for text snippet (len=%d, is_query=%s)", len(text), is_query)
         return self.embedding_client.embed_query(text)
 
-    def search_similar_fields(self, entity_text: str, embedding: list[float], limit: int = 10) -> list[FieldMatch]:
+    def search_similar_fields(
+        self,
+        entity_text: str,
+        embedding: list[float],
+        limit: int = 10,
+        field_type: str | None = None,
+    ) -> list[FieldMatch]:
+        """Search pgvector for similar fields, optionally filtered by type."""
         engine = get_engine()
         embedding_literal = "[" + ", ".join(str(x) for x in embedding) + "]"
 
         with engine.connect() as conn:
-            result = conn.execute(
-                text(SQL_SEARCH_SIMILAR_FIELDS).bindparams(
-                    embedding=embedding_literal,
-                    limit=limit,
+            if field_type:
+                result = conn.execute(
+                    text(SQL_SEARCH_SIMILAR_FIELDS_BY_TYPE).bindparams(
+                        embedding=embedding_literal,
+                        field_type=field_type,
+                        limit=limit,
+                    )
                 )
-            )
+            else:
+                result = conn.execute(
+                    text(SQL_SEARCH_SIMILAR_FIELDS).bindparams(
+                        embedding=embedding_literal,
+                        limit=limit,
+                    )
+                )
             rows = result.fetchall()
 
         results = [
@@ -284,8 +316,10 @@ Now extract entities from this query:
 
         for measure_text in extracted.measures:
             logger.info("Processing measure entity '%s'", measure_text)
-            embedding = self.embed_text(measure_text)
-            matches = self.search_similar_fields(measure_text, embedding, limit=top_k)
+            embedding = self.embed_text(measure_text, is_query=True)
+            matches = self.search_similar_fields(
+                measure_text, embedding, limit=top_k, field_type="measure"
+            )
             candidates = [
                 {
                     "explore": match.explore_name,
@@ -309,9 +343,12 @@ Now extract entities from this query:
 
         for dimension_text in extracted.dimensions:
             logger.info("Processing dimension entity '%s'", dimension_text)
-            enriched_text = f"{dimension_text}. Also known as: attribute, segment, grouping"
-            embedding = self.embed_text(enriched_text)
-            matches = self.search_similar_fields(dimension_text, embedding, limit=top_k)
+            # No generic enrichment — embed the raw dimension text.
+            # The embedding documents already contain rich synonyms via LookML descriptions.
+            embedding = self.embed_text(dimension_text, is_query=True)
+            matches = self.search_similar_fields(
+                dimension_text, embedding, limit=top_k, field_type="dimension"
+            )
             candidates = [
                 {
                     "explore": match.explore_name,
@@ -371,13 +408,10 @@ Now extract entities from this query:
                 output.append(f"    Type: {entity['type'].upper()}")
                 if entity.get("candidates"):
                     for rank, candidate in enumerate(entity["candidates"], start=1):
-                        output.append(f"     Rank {rank:<3d} {'Field':.<28} {'Explore':.<28} {'View':.<28} {'Measure Type':.<14} {'Similarity':.>12}")
                         output.append(
-                            f"             {candidate.get('field_name', ''):.<28} "
-                            f"{candidate.get('explore', ''):.<28} "
-                            f"{candidate.get('view_name', ''):.<28} "
-                            f"{(candidate.get('measure_type') or ''):.<14} "
-                            f"{candidate.get('similarity', 0.0):.4f}"
+                            f"     Rank {rank}: {candidate.get('field_name', ''):<30} "
+                            f"view={candidate.get('view_name', ''):<30} "
+                            f"sim={candidate.get('similarity', 0.0):.4f}"
                         )
                 else:
                     output.append("     (No candidates found)")
@@ -392,7 +426,7 @@ Now extract entities from this query:
 
 
 def _demo_run() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(levelnames)s %(name)s: %(message)s")
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
     print("\nEntity Extractor Demo (src.retrieval.vector)")
     print("=" * 80)

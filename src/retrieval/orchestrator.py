@@ -58,80 +58,9 @@ MAX_GRAPH_DEPTH = 4           # Max join hops in AGE traversal (BASE_VIEW|JOINS*
 
 
 # ─── FILTER VALUE MAP ─────────────────────────────────────────────────
-# Resolves natural language filter values to their LookML/BQ equivalents.
-# This is the gap that causes "field found, query wrong" failures.
-#
-# Structure: {dimension_name: {user_term: lookml_value}}
-# Source: LookML view descriptions + Ayush's data dictionary.
-# TODO: Move to config/filter_values.yaml when this grows beyond Finance BU.
-
-FILTER_VALUE_MAP: dict[str, dict[str, str]] = {
-    "generation": {
-        "millennials": "Millennial",
-        "millennial": "Millennial",
-        "gen z": "Gen Z",
-        "gen-z": "Gen Z",
-        "genz": "Gen Z",
-        "gen x": "Gen X",
-        "gen-x": "Gen X",
-        "genx": "Gen X",
-        "baby boomer": "Baby Boomer",
-        "baby boomers": "Baby Boomer",
-        "boomers": "Baby Boomer",
-        "boomer": "Baby Boomer",
-    },
-    "bus_seg": {
-        "open": "OPEN",
-        "small business": "OPEN",
-        "consumer": "CPS",
-        "consumer personal services": "CPS",
-        "cps": "CPS",
-        "gcs": "GCS",
-        "global commercial services": "GCS",
-        "commercial": "GCS",
-        "gmns": "GMNS",
-        "global merchant network services": "GMNS",
-        "merchant": "GMNS",
-    },
-    "basic_supp_in": {
-        "basic": "B",
-        "primary": "B",
-        "supplementary": "S",
-        "secondary": "S",
-        "authorized user": "S",
-    },
-    "apple_pay_wallet_flag": {
-        "yes": "Y",
-        "enrolled": "Y",
-        "no": "N",
-        "not enrolled": "N",
-    },
-    "afc_enroll_in": {
-        "yes": "Y",
-        "enrolled": "Y",
-        "no": "N",
-        "not enrolled": "N",
-    },
-    "basic_cust_noa": {
-        "new": "New",
-        "organic": "Organic",
-        "attrited": "Attrited",
-    },
-    "rel_type": {
-        "revolving": "AA",
-        "revolver": "AA",
-        "primary account": "AA",
-    },
-}
-
-# Yesno dimensions need special handling — Looker yesno filters use "Yes"/"No"
-YESNO_DIMENSIONS = {
-    "is_replacement",
-    "is_not_cm_initiated",
-    "is_cm_initiated",
-    "is_active_standard",
-    "is_active_premium",
-}
+# Single source of truth: src/retrieval/filters.py
+# Imported here for backward compatibility with orchestrator's _resolve_filters().
+from src.retrieval.filters import FILTER_VALUE_MAP, YESNO_DIMENSIONS
 
 
 # ─── DATA STRUCTURES ─────────────────────────────────────────────────
@@ -170,9 +99,10 @@ class RetrievalOrchestrator:
 
     Args:
         pg_conn: Active psycopg connection (shared by pgvector and AGE).
-        embed_fn: Callable that turns text → 768-dim embedding vector.
+        embed_fn: Callable that turns text → 1024-dim embedding vector.
                   Signature: (text: str) -> list[float]
-                  In production, this calls SafeChain's text-embedding-005 endpoint.
+                  In production, this calls SafeChain's BGE-large-en endpoint.
+                  Locally, uses sentence-transformers via model_adapter.
         model_name: Optional model scope (e.g. "finance") to narrow vector search.
     """
 
@@ -573,10 +503,12 @@ class RetrievalOrchestrator:
             # Pass through as-is (time ranges, numeric values, etc.)
             resolved[dim_name] = str(user_value)
 
-        # Add time_range as partition filter if present
+        # Add time_range as partition filter — use correct field name per explore
+        from src.retrieval.filters import EXPLORE_PARTITION_FIELDS
         time_range = entities.get("time_range")
         if time_range:
-            resolved["partition_date"] = time_range
+            partition_field = EXPLORE_PARTITION_FIELDS.get(explore, "partition_date")
+            resolved[partition_field] = time_range
 
         return resolved
 
@@ -587,6 +519,7 @@ class RetrievalOrchestrator:
         pointing to partition dimensions. These MUST be in the final query.
         """
         from src.retrieval import graph_search
+        from src.retrieval.filters import EXPLORE_PARTITION_FIELDS
 
         try:
             filters = graph_search.get_partition_filters(self.pg_conn, explore)
@@ -599,8 +532,9 @@ class RetrievalOrchestrator:
             return mandatory
         except (NotImplementedError, Exception) as exc:
             logger.debug("Mandatory filter lookup failed: %s", exc)
-            # Fallback: always include partition_date
-            return {"partition_date": "last 90 days"}
+            # Fallback: use explore-specific partition field name
+            partition_field = EXPLORE_PARTITION_FIELDS.get(explore, "partition_date")
+            return {partition_field: "last 90 days"}
 
     # ── STEP 10: FIELD SPLITTING ──────────────────────────────────
 

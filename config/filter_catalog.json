@@ -1,0 +1,197 @@
+{
+  "explore_views": {
+    "finance_card_issuance": [
+      "ace_organization",
+      "cmdl_card_main",
+      "gihr_card_issuance"
+    ],
+    "finance_cardmember_360": [
+      "ace_organization",
+      "cmdl_card_main",
+      "custins_customer_insights_cardmember",
+      "risk_indv_cust"
+    ],
+    "finance_customer_risk": [
+      "cmdl_card_main",
+      "custins_customer_insights_cardmember",
+      "risk_indv_cust"
+    ],
+    "finance_merchant_profitability": [
+      "cmdl_card_main",
+      "custins_customer_insights_cardmember",
+      "fin_card_member_merchant_profitability"
+    ],
+    "finance_travel_sales": [
+      "cmdl_card_main",
+      "custins_customer_insights_cardmember",
+      "tlsarpt_travel_sales"
+    ]
+  },
+  "partition_fields": {
+    "finance_card_issuance": "issuance_date",
+    "finance_cardmember_360": "partition_date",
+    "finance_customer_risk": "partition_date",
+    "finance_merchant_profitability": "partition_date",
+    "finance_travel_sales": "booking_date"
+  },
+  "synonyms": {
+    "acct_ctgy_cd": [
+      "account type",
+      "card category code",
+      "account classification"
+    ],
+    "afc_enroll_in": [
+      "AFC enrollment",
+      "airline credit status"
+    ],
+    "age35andover": [
+      "age flag",
+      "over 35 indicator",
+      "age segment"
+    ],
+    "air_trip_type": [
+      "flight type",
+      "air booking type",
+      "itinerary type",
+      "air trip category"
+    ],
+    "apple_pay_wallet_flag": [
+      "digital wallet flag",
+      "apple pay status",
+      "mobile pay indicator"
+    ],
+    "basic_cust_noa": [
+      "customer lifecycle",
+      "new/organic/attrited",
+      "NOA segment",
+      "customer status",
+      "acquisition segment"
+    ],
+    "basic_supp_in": [
+      "card type basic supp",
+      "primary/secondary",
+      "basic or supplementary"
+    ],
+    "bus_seg": [
+      "customer segment",
+      "business line",
+      "card segment"
+    ],
+    "business_org": [
+      "product line",
+      "card product group",
+      "business organization",
+      "product segmentation"
+    ],
+    "card_prod_id": [
+      "product type",
+      "card product",
+      "card tier",
+      "card category",
+      "card type",
+      "product code",
+      "product code",
+      "card product",
+      "product ID",
+      "card type"
+    ],
+    "cl_rpt_are": [
+      "card replacement reason",
+      "reissue reason",
+      "replacement type"
+    ],
+    "cmgn_cd": [
+      "campaign ID",
+      "campaign identifier",
+      "marketing code"
+    ],
+    "cust_ref": [
+      "customer ID",
+      "CM ID",
+      "member number",
+      "cust_ref",
+      "customer ID",
+      "CM ID",
+      "member number"
+    ],
+    "generation": [
+      "generational segment",
+      "age group",
+      "demographic cohort",
+      "generation wise card members"
+    ],
+    "lis_type": [
+      "issuance list type",
+      "list category"
+    ],
+    "merchant_name": [
+      "store name",
+      "vendor name",
+      "business name"
+    ],
+    "oracle_mer_hier_lvl3": [
+      "merchant category",
+      "merchant type",
+      "merchant segment",
+      "MCC group"
+    ],
+    "org_id": [
+      "organization code",
+      "org identifier",
+      "division ID"
+    ],
+    "org_name": [
+      "department name",
+      "division name",
+      "org unit",
+      "business unit name"
+    ],
+    "org_type": [
+      "unit type",
+      "org classification"
+    ],
+    "rel_type": [
+      "account relationship",
+      "customer type"
+    ],
+    "rpt_stl": [
+      "reservation status",
+      "booking state"
+    ],
+    "travel_vertical": [
+      "trip category",
+      "travel segment",
+      "booking type",
+      "travel verticals",
+      "trip vertical"
+    ]
+  },
+  "value_map": {
+    "cmdl_card_main.generation": {
+      "baby boomer": "Baby Boomer",
+      "gen x": "Gen X",
+      "gen z": "Gen Z",
+      "millennial": "Millennial"
+    },
+    "tlsarpt_travel_sales.air_trip_type": {
+      "one way": "One Way",
+      "open jaw": "Open Jaw",
+      "round trip": "Round Trip"
+    },
+    "tlsarpt_travel_sales.travel_vertical": {
+      "business": "Business",
+      "transit": "Transit",
+      "vacation": "Vacation"
+    }
+  },
+  "yesno_dimensions": [
+    "has_authorized_users",
+    "is_active_premium",
+    "is_active_standard",
+    "is_cancelled",
+    "is_cm_initiated",
+    "is_dining_at_restaurant",
+    "is_not_cm_initiated",
+    "is_replacement"
+  ]
+}
