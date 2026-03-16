@@ -58,7 +58,7 @@ CONFIDENCE_FLOOR = 0.70
 
 # Near-miss detection: if runner-up / top > this ratio, flag as ambiguous.
 # Ratio-based (not absolute delta) to handle BGE's anisotropic similarity space.
-NEAR_MISS_RATIO = 0.92
+NEAR_MISS_RATIO = 0.85
 
 # GAP 7: Quality floor for relative normalization. Prevents division by tiny
 # denominators on junk queries. Set to the score of a single low-quality match.
@@ -255,7 +255,16 @@ def retrieve_with_graph_validation(
         explore.confidence = round(min(explore.score / normalization_base, 1.0), 4)
 
     top_confidence = explores[0].confidence
-    action = "proceed"
+    clarify_reason = ""
+
+    if explores[0].is_near_miss:
+        action = "disambiguate"
+        clarify_reason = "near_miss_ambiguous_explore"
+        logger.info(
+            "Near-miss detected — action=disambiguate (top two explores too close)"
+        )
+    else:
+        action = "proceed"
 
     logger.info("[6/6] Pipeline complete!")
     pipeline_result = PipelineResult(
@@ -263,6 +272,7 @@ def retrieve_with_graph_validation(
         explores=explores,
         action=action,
         confidence=top_confidence,
+        clarify_reason=clarify_reason,
         entities=extracted_entities,
         raw_results=raw_results,
         filters=filter_result,
