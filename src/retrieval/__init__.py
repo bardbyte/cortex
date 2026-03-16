@@ -1,18 +1,12 @@
 """Hybrid retrieval system — the heart of Cortex.
 
-Three parallel channels find the right {model, explore, dimensions, measures}:
+Two channels find the right {model, explore, dimensions, measures, filters}:
 
-  1. Vector Search (Vertex AI Search) — semantic similarity on field descriptions
-  2. Graph Search (Neo4j) — structural validation of LookML relationships
-  3. Few-Shot Match (FAISS) — pattern matching against proven golden queries
+  1. Vector Search (pgvector) — semantic similarity on field embeddings (BGE 1024-dim)
+  2. Graph Validation (hybrid tables + AGE) — structural validation of LookML relationships
 
-These feed into Reciprocal Rank Fusion (RRF) + a structural validation gate.
+These feed into a multiplicative scoring formula that enforces coverage dominance:
+  score = coverage³ × mean_sim × base_view_bonus × desc_sim_bonus
 
-Why three channels?
-  - Vector alone: returns semantically similar fields but ignores LookML structure
-  - Graph alone: understands structure but can't do fuzzy matching
-  - Few-shot alone: only works when a similar query has been seen before
-  - Together: they cover each other's blind spots
-
-This module is 75% of your error budget. Fix retrieval, fix Cortex.
+Entry point: pipeline.retrieve_with_graph_validation(query)
 """

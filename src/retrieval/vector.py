@@ -206,48 +206,61 @@ Now extract entities from this query:
             filters=extracted.filters,
         )
 
+    def _parse_entity_json(self, json_str: str) -> ExtractedEntities:
+        """Parse LLM JSON response into ExtractedEntities, tolerating key variations."""
+        entities_dict = json.loads(json_str)
+
+        measures = (entities_dict.get("measures")
+                    or entities_dict.get("Metrics")
+                    or entities_dict.get("metrics")
+                    or [])
+        dimensions = (entities_dict.get("dimensions")
+                      or entities_dict.get("Dimensions")
+                      or [])
+        time_range = (entities_dict.get("time_range")
+                      or entities_dict.get("Time_range"))
+        filters = (entities_dict.get("filters")
+                   or entities_dict.get("Filters")
+                   or [])
+
+        return ExtractedEntities(
+            measures=measures or [],
+            dimensions=dimensions or [],
+            time_range=time_range,
+            filters=filters or [],
+        )
+
+    MAX_EXTRACTION_RETRIES = 2
+
     def extract_entities(self, query: str) -> ExtractedEntities:
-        prompt = self.ENTITY_EXTRACTION_PROMPT.format(query=query)
-        try:
-            json_str = self.llm_client.invoke(prompt)
-            entities_dict = json.loads(json_str)
+        """Extract entities from query with retry on LLM/JSON failure.
 
-            measures = entities_dict.get("measures")
-            if measures is None:
-                measures = entities_dict.get("Metrics")
-            if measures is None:
-                measures = entities_dict.get("metrics")
-            if measures is None:
-                measures = []
+        On failure: retries once (LLM responses are non-deterministic, a retry
+        often produces valid JSON). If both attempts fail, returns empty entities
+        and logs at ERROR level so the pipeline's confidence gate can reject.
+        """
+        prompt = self.ENTITY_EXTRACTION_PROMPT.replace("{query}", query)
 
-            dimensions = entities_dict.get("dimensions")
-            if dimensions is None:
-                dimensions = entities_dict.get("Dimensions")
-            if dimensions is None:
-                dimensions = []
+        for attempt in range(1, self.MAX_EXTRACTION_RETRIES + 1):
+            try:
+                json_str = self.llm_client.invoke(prompt)
+                return self._parse_entity_json(json_str)
+            except json.JSONDecodeError as exc:
+                logger.warning(
+                    "Attempt %d/%d: Failed to parse LLM response as JSON: %s",
+                    attempt, self.MAX_EXTRACTION_RETRIES, exc,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Attempt %d/%d: Error during entity extraction: %s",
+                    attempt, self.MAX_EXTRACTION_RETRIES, exc,
+                )
 
-            time_range = entities_dict.get("time_range")
-            if time_range is None:
-                time_range = entities_dict.get("Time_range")
-
-            filters = entities_dict.get("filters")
-            if filters is None:
-                filters = entities_dict.get("Filters")
-            if filters is None:
-                filters = []
-
-            return ExtractedEntities(
-                measures=measures or [],
-                dimensions=dimensions or [],
-                time_range=time_range,
-                filters=filters or [],
-            )
-        except json.JSONDecodeError as exc:
-            logger.error("Failed to parse LLM response as JSON: %s", exc)
-            return ExtractedEntities(measures=[], dimensions=[], time_range=None, filters=[])
-        except Exception as exc:
-            logger.error("Error during entity extraction: %s", exc)
-            return ExtractedEntities(measures=[], dimensions=[], time_range=None, filters=[])
+        logger.error(
+            "Entity extraction failed after %d attempts for query: %s",
+            self.MAX_EXTRACTION_RETRIES, query,
+        )
+        return ExtractedEntities(measures=[], dimensions=[], time_range=None, filters=[])
 
     def embed_text(self, text: str, is_query: bool = True) -> list[float]:
         """Generate embedding with BGE instruction prefix for queries.

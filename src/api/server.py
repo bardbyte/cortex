@@ -1,16 +1,8 @@
-"""Cortex API server -- FastAPI with SSE streaming.
+"""Cortex API server -- FastAPI with retrieval pipeline.
 
 Endpoints:
-  POST /query         -- Synchronous query, returns full CortexResponse
-  POST /query/stream  -- SSE streaming, pipeline events + response
-  GET  /health        -- Health check (SafeChain, PostgreSQL, FAISS)
-  POST /feedback      -- User feedback for learning loop (ADR-008)
-  GET  /trace/{id}    -- Retrieve pipeline trace by ID
-
-Architecture decision (AI engineer review):
-  v1 uses CortexOrchestrator directly (proven SafeChain path), NOT
-  ADK Runner. The ADK Runner + SafeChainLlm adapter path is preserved
-  in CortexAgent for when we need Agent Engine deployment. Two-way door.
+  POST /query         -- Run retrieval pipeline, return scored explores + filters
+  GET  /health        -- Health check (SafeChain, PostgreSQL)
 
 Usage:
   uvicorn src.api.server:app --host 0.0.0.0 --port 8080
@@ -18,24 +10,23 @@ Usage:
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+
+from src.retrieval.pipeline import retrieve_with_graph_validation, get_top_explore
 
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Cortex API",
-    description="NL2SQL pipeline for American Express via Looker semantic layer.",
-    version="0.3.0",
+    description="NL2SQL retrieval pipeline for American Express via Looker semantic layer.",
+    version="0.4.0",
 )
 
-# CORS -- restrictive in production, permissive in dev
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # TODO: restrict to ChatGPT Enterprise domain
@@ -48,179 +39,54 @@ app.add_middleware(
 # ── Request / Response Models ─────────────────────────────────────
 
 class QueryRequest(BaseModel):
-    """Request body for /query and /query/stream."""
     query: str
-    history: list[dict] = []
-    session_id: str | None = None
-    user_id: str | None = None
-    debug: bool = False
-
-
-class FeedbackRequest(BaseModel):
-    """Request body for /feedback."""
-    query: str
-    session_id: str
-    rating: int | None = None           # 1-5
-    filter_correction: dict | None = None  # {user_term, correct_value, dimension}
-    comment: str | None = None
+    top_k: int = 5
 
 
 class HealthResponse(BaseModel):
-    """Response for /health."""
     status: str
     safechain: str
     postgresql: str
-    faiss: str
-
-
-# ── Globals (initialized at startup) ──────────────────────────────
-
-_orchestrator = None
-
-
-@app.on_event("startup")
-async def startup():
-    """Initialize CortexOrchestrator at server start."""
-    global _orchestrator
-
-    from src.pipeline.bootstrap import create_cortex_orchestrator
-
-    logger.info("Starting Cortex API server...")
-
-    try:
-        _orchestrator = await create_cortex_orchestrator(sql_gen_only=True)
-        logger.info("CortexOrchestrator ready.")
-    except Exception as e:
-        logger.error("Failed to initialize Cortex: %s", e, exc_info=True)
-        raise
 
 
 # ── Endpoints ─────────────────────────────────────────────────────
 
 @app.post("/query")
-async def query(request: QueryRequest) -> dict:
-    """Synchronous query endpoint. Returns full response + trace."""
-    if _orchestrator is None:
-        raise HTTPException(status_code=503, detail="Cortex not initialized")
-
-    result = await _orchestrator.run(
-        query=request.query,
-        conversation_history=request.history,
-        debug=request.debug,
-    )
-    return result
-
-
-@app.post("/query/stream")
-async def query_stream(request: QueryRequest) -> StreamingResponse:
-    """SSE streaming endpoint. Streams pipeline events + response.
-
-    Event types:
-      step_start          -- Pipeline step beginning
-      step_complete       -- Pipeline step finished (with duration_ms)
-      answer              -- Final response dict
-      error               -- Error occurred
-    """
-    if _orchestrator is None:
-        raise HTTPException(status_code=503, detail="Cortex not initialized")
-
-    async def event_generator():
-        try:
-            async for event in _orchestrator.run_streaming(
-                query=request.query,
-                conversation_history=request.history,
-            ):
-                yield f"data: {json.dumps(event)}\n\n"
-        except Exception as e:
-            logger.error("Stream error: %s", e, exc_info=True)
-            yield f"data: {json.dumps({'event_type': 'error', 'message': str(e)})}\n\n"
-
-        yield f"data: {json.dumps({'event_type': 'done'})}\n\n"
-
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
-
-
-@app.get("/trace/{trace_id}")
-async def get_trace(trace_id: str) -> dict:
-    """Retrieve a pipeline trace by ID."""
-    if _orchestrator is None:
-        raise HTTPException(status_code=503, detail="Cortex not initialized")
-
-    trace = _orchestrator.get_trace(trace_id)
-    if trace is None:
-        raise HTTPException(status_code=404, detail=f"Trace {trace_id} not found")
-
-    return trace.to_dict()
+def query(request: QueryRequest) -> dict[str, Any]:
+    """Run retrieval pipeline and return top explore with filters."""
+    result = retrieve_with_graph_validation(request.query, top_k=request.top_k)
+    return get_top_explore(result)
 
 
 @app.get("/health")
 async def health() -> HealthResponse:
-    """Health check -- verifies SafeChain, PostgreSQL, and FAISS."""
-    sc_status = await _check_safechain()
+    """Health check — verifies SafeChain and PostgreSQL connectivity."""
+    sc_status = _check_safechain()
     pg_status = _check_postgresql()
-    faiss_status = _check_faiss()
 
-    overall = "ok" if all(
-        s == "ok" for s in [sc_status, pg_status, faiss_status]
-    ) else "degraded"
+    overall = "ok" if all(s == "ok" for s in [sc_status, pg_status]) else "degraded"
 
-    return HealthResponse(
-        status=overall,
-        safechain=sc_status,
-        postgresql=pg_status,
-        faiss=faiss_status,
-    )
-
-
-@app.post("/feedback")
-async def feedback(request: FeedbackRequest) -> dict:
-    """User feedback on query results. Feeds learning loop (ADR-008)."""
-    logger.info(
-        "Feedback received: session=%s, rating=%s, correction=%s",
-        request.session_id,
-        request.rating,
-        request.filter_correction,
-    )
-
-    if request.filter_correction:
-        logger.info(
-            "Filter correction: user_term=%s -> correct_value=%s (dimension=%s)",
-            request.filter_correction.get("user_term"),
-            request.filter_correction.get("correct_value"),
-            request.filter_correction.get("dimension"),
-        )
-
-    return {"status": "logged", "session_id": request.session_id}
+    return HealthResponse(status=overall, safechain=sc_status, postgresql=pg_status)
 
 
 @app.get("/capabilities")
-async def capabilities() -> dict:
+def capabilities() -> dict[str, Any]:
     """Return system capabilities for the frontend."""
     return {
-        "version": "0.3.0",
-        "mode": "sql_gen_only",
+        "version": "0.4.0",
+        "mode": "retrieval_only",
         "features": {
-            "sql_generation": True,
-            "sql_execution": False,
-            "streaming": True,
+            "explore_scoring": True,
+            "filter_resolution": True,
             "confidence_scores": True,
-            "pipeline_trace": True,
-            "feedback": True,
+            "near_miss_detection": True,
         },
     }
 
 
 # ── Health Check Helpers ──────────────────────────────────────────
 
-async def _check_safechain() -> str:
+def _check_safechain() -> str:
     try:
         from ee_config.config import Config
         Config.from_env()
@@ -240,13 +106,4 @@ def _check_postgresql() -> str:
         return "ok"
     except Exception as e:
         logger.warning("PostgreSQL health check failed: %s", e)
-        return f"error: {e}"
-
-
-def _check_faiss() -> str:
-    try:
-        from src.retrieval import fewshot  # noqa: F401
-        return "ok"
-    except Exception as e:
-        logger.warning("FAISS health check failed: %s", e)
         return f"error: {e}"

@@ -24,6 +24,7 @@ from config.constants import (
     SQL_GET_EXPLORES_FOR_FIELDS,
     SQL_GET_PARTITION_FILTERS,
     SQL_GET_ALL_EXPLORE_FIELDS,
+    SQL_CHECK_FILTER_FIELDS_IN_EXPLORES,
 )
 
 logger = logging.getLogger(__name__)
@@ -150,6 +151,49 @@ def get_all_explore_fields(explore_name: str) -> list[dict]:
             }
             for row in result.fetchall()
         ]
+
+
+def check_filter_fields_in_explores(field_hints: list[str]) -> dict[str, set[str]]:
+    """Check which explores contain dimensions matching filter field_hints.
+
+    GAP 1: Used to compute filter_penalty during explore scoring.
+    If a user asks for "generation = Millennial", we need to verify that the
+    candidate explore actually HAS a "generation" dimension before scoring it.
+
+    Args:
+        field_hints: Conceptual field names from filter extraction (e.g., ["generation", "card_type"])
+
+    Returns:
+        {explore_name: {matched_hint_1, matched_hint_2, ...}}
+        Empty dict if no matches or if the hybrid table isn't populated.
+    """
+    if not field_hints:
+        return {}
+
+    engine = get_engine()
+    field_patterns = [f"%{hint}%" for hint in field_hints]
+
+    try:
+        with engine.connect() as conn:
+            result = conn.execute(
+                text(SQL_CHECK_FILTER_FIELDS_IN_EXPLORES).bindparams(
+                    field_patterns=field_patterns,
+                )
+            )
+
+            explore_hints: dict[str, set[str]] = {}
+            for row in result.fetchall():
+                explore_name = row[0]
+                field_name = row[1]
+                # Match back to which hint this field satisfies
+                for hint in field_hints:
+                    if hint.lower() in field_name.lower():
+                        explore_hints.setdefault(explore_name, set()).add(hint)
+
+            return explore_hints
+    except Exception as e:
+        logger.debug("Filter field check failed (table may not exist): %s", e)
+        return {}
 
 
 # ─── COLD PATH: AGE Graph Queries ────────────────────────────────────

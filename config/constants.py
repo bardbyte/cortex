@@ -185,6 +185,17 @@ WHERE explore_name = :explore_name
   AND NOT is_hidden;
 """
 
+# GAP 1: Check which explores contain dimensions matching filter field_hints.
+# Used to compute filter_penalty BEFORE explore selection (not after).
+# field_patterns are ILIKE patterns like ['%generation%', '%card_type%'].
+SQL_CHECK_FILTER_FIELDS_IN_EXPLORES = """
+SELECT explore_name, field_name
+FROM explore_field_index
+WHERE field_type = 'dimension'
+  AND NOT is_hidden
+  AND field_name ILIKE ANY(:field_patterns);
+"""
+
 # ─── SQL: Verification ───────────────────────────────────────────────
 
 SQL_COUNT_FIELD_EMBEDDINGS = "SELECT count(*) FROM field_embeddings;"
