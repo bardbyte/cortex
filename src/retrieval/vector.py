@@ -206,9 +206,43 @@ Now extract entities from this query:
             filters=extracted.filters,
         )
 
+    @staticmethod
+    def _extract_json_from_llm_response(raw: str) -> str:
+        """Extract JSON object from LLM response that may contain markdown fences or preamble.
+
+        Handles:
+          - ```json { ... } ```
+          - ``` { ... } ```
+          - Preamble text before the JSON object
+          - Trailing text after the JSON object
+        """
+        text = raw.strip()
+
+        # Strip markdown code fences
+        if "```" in text:
+            # Find content between first ``` and last ```
+            parts = text.split("```")
+            for part in parts:
+                candidate = part.strip()
+                # Skip the language tag (e.g., "json")
+                if candidate.lower().startswith("json"):
+                    candidate = candidate[4:].strip()
+                if candidate.startswith("{"):
+                    text = candidate
+                    break
+
+        # Find the first { and last } to extract the JSON object
+        start = text.find("{")
+        end = text.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            text = text[start:end + 1]
+
+        return text
+
     def _parse_entity_json(self, json_str: str) -> ExtractedEntities:
         """Parse LLM JSON response into ExtractedEntities, tolerating key variations."""
-        entities_dict = json.loads(json_str)
+        cleaned = self._extract_json_from_llm_response(json_str)
+        entities_dict = json.loads(cleaned)
 
         measures = (entities_dict.get("measures")
                     or entities_dict.get("Metrics")
@@ -230,7 +264,7 @@ Now extract entities from this query:
             filters=filters or [],
         )
 
-    MAX_EXTRACTION_RETRIES = 2
+    MAX_EXTRACTION_RETRIES = 3
 
     def extract_entities(self, query: str) -> ExtractedEntities:
         """Extract entities from query with retry on LLM/JSON failure.
@@ -246,11 +280,13 @@ Now extract entities from this query:
                 response = self.llm_client.invoke(prompt)
                 # SafeChain returns LangChain AIMessage, not raw string
                 json_str = response.content if hasattr(response, 'content') else str(response)
+                logger.debug("LLM raw response (attempt %d): %s", attempt, json_str[:200])
                 return self._parse_entity_json(json_str)
             except json.JSONDecodeError as exc:
+                # Log the raw response so we can see what the LLM actually returned
                 logger.warning(
-                    "Attempt %d/%d: Failed to parse LLM response as JSON: %s",
-                    attempt, self.MAX_EXTRACTION_RETRIES, exc,
+                    "Attempt %d/%d: Failed to parse LLM response as JSON: %s\n  Raw: %.200s",
+                    attempt, self.MAX_EXTRACTION_RETRIES, exc, json_str,
                 )
             except Exception as exc:
                 logger.warning(
