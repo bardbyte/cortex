@@ -27,6 +27,13 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
+# SafeChain — always present on corp, no fallbacks
+from ee_config.config import Config
+from safechain.tools.mcp import MCPToolLoader, MCPToolAgent
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
+
+from src.pipeline.orchestrator import CortexOrchestrator, ConversationStore
+
 
 # ── Terminal colors (no dependencies) ─────────────────────────────
 
@@ -45,6 +52,83 @@ class C:
 
 def styled(text: str, *styles: str) -> str:
     return "".join(styles) + text + C.RESET
+
+
+# ── Minimal ReAct Agent ──────────────────────────────────────────
+# Same pattern as access_llm/chat.py AgentOrchestrator, but self-contained.
+# CortexOrchestrator calls self.react_agent.run(messages) → {"content": str}.
+
+class ReactAgent:
+    """Lightweight ReAct loop over SafeChain's MCPToolAgent.
+
+    Provides the .run(messages) interface CortexOrchestrator expects.
+    Multi-step: LLM calls tools → sees results → calls more tools → final answer.
+    """
+
+    def __init__(self, model_id: str, tools: list, max_iterations: int = 10):
+        self.agent = MCPToolAgent(model_id, tools)
+        self.max_iterations = max_iterations
+
+    @staticmethod
+    def _to_langchain(messages: list[dict]) -> list:
+        """Convert dict messages to LangChain message objects."""
+        lc = []
+        for msg in messages:
+            role = msg.get("role", "")
+            content = msg.get("content", "")
+            if role == "system":
+                lc.append(SystemMessage(content=content))
+            elif role == "user":
+                lc.append(HumanMessage(content=content))
+            elif role == "assistant":
+                lc.append(AIMessage(content=content))
+            elif role == "tool":
+                lc.append(ToolMessage(
+                    content=content,
+                    tool_call_id=msg.get("tool_call_id", ""),
+                    name=msg.get("name", ""),
+                ))
+        return lc
+
+    async def run(self, messages: list[dict]) -> dict:
+        """Run ReAct loop. Returns {"content": str}."""
+        content = ""
+        iteration = 0
+
+        while iteration < self.max_iterations:
+            iteration += 1
+            result = await self.agent.ainvoke(self._to_langchain(messages))
+
+            if isinstance(result, dict):
+                content = result.get("content", "")
+                tool_results = result.get("tool_results", [])
+            else:
+                content = getattr(result, "content", str(result))
+                tool_results = []
+
+            if not tool_results:
+                # No tool calls → final answer
+                return {"content": content}
+
+            # Tool results → add to context and loop
+            if content:
+                messages.append({"role": "assistant", "content": content})
+
+            for tr in tool_results:
+                tool_name = tr.get("tool", "unknown")
+                tool_content = (
+                    f"Error: {tr['error']}" if "error" in tr
+                    else str(tr.get("result", ""))
+                )
+                messages.append({
+                    "role": "tool",
+                    "name": tool_name,
+                    "content": tool_content,
+                    "tool_call_id": f"call_{iteration}_{tool_name}",
+                })
+                print(f"         {styled('tool:', C.YELLOW)} {tool_name}")
+
+        return {"content": content or f"Max iterations ({self.max_iterations}) reached."}
 
 
 # ── Event renderer ────────────────────────────────────────────────
@@ -152,12 +236,7 @@ def render_event(event_type: str, data: dict) -> None:
 # ── Orchestrator initialization ───────────────────────────────────
 
 async def init_orchestrator():
-    """Initialize the CortexOrchestrator (same as server.py startup)."""
-    from ee_config.config import Config
-    from safechain.tools.mcp import MCPToolLoader
-    from access_llm.chat import AgentOrchestrator
-    from src.pipeline.orchestrator import CortexOrchestrator, ConversationStore
-
+    """Initialize the CortexOrchestrator."""
     print(f"  {styled('[1/4]', C.BOLD)} Loading SafeChain config...")
     config = Config.from_env()
 
@@ -166,10 +245,10 @@ async def init_orchestrator():
     print(f"         {len(tools)} tools loaded")
 
     print(f"  {styled('[3/4]', C.BOLD)} Creating orchestrator...")
-    react_agent = AgentOrchestrator(
+    react_agent = ReactAgent(
         model_id="3",  # Gemini 2.5 Flash
         tools=tools,
-        max_iterations=5,
+        max_iterations=10,
     )
 
     orchestrator = CortexOrchestrator(
@@ -198,12 +277,7 @@ async def main():
 {styled('=' * 62, C.BOLD)}
 """)
 
-    try:
-        orchestrator = await init_orchestrator()
-    except Exception as e:
-        print(f"\n  {styled('INIT FAILED', C.BOLD, C.RED)}: {e}")
-        print(f"  Check: CONFIG_PATH, SafeChain creds, MCP servers, Docker (PostgreSQL)")
-        return
+    orchestrator = await init_orchestrator()
 
     print(f"\n  {styled('Ready!', C.BOLD, C.GREEN)} Type a question or /help\n")
 
