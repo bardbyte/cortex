@@ -307,14 +307,20 @@ def step_2_reingest_pgvector() -> bool:
     try:
         from src.connectors.postgres_age_client import get_engine
         from sqlalchemy import text as sa_text
+        from scripts.load_lookml_to_pgvector import LookMLParser, PostgresOperations
+
         engine = get_engine()
 
-        # 2a: Check old state
+        # 2a: Ensure table + index exist (idempotent, needed for fresh DB)
+        pg_ops = PostgresOperations()
+        pg_ops.create_table()
+        pg_ops.create_index()
+
+        # 2b: Check old state + truncate
         with engine.connect() as conn:
             old_count = conn.execute(sa_text("SELECT COUNT(*) FROM field_embeddings")).scalar()
-        info(f"Current records: {old_count} (old per-explore format)")
+        info(f"Current records: {old_count}")
 
-        # 2b: Truncate
         info("Truncating old records...")
         with engine.begin() as conn:
             conn.execute(sa_text("TRUNCATE field_embeddings"))
@@ -326,12 +332,6 @@ def step_2_reingest_pgvector() -> bool:
         print()
 
         t0 = time.time()
-
-        from scripts.load_lookml_to_pgvector import LookMLParser, PostgresOperations
-
-        pg_ops = PostgresOperations()
-        pg_ops.create_table()
-        pg_ops.create_index()
 
         parser = LookMLParser()
         records = parser.get_records_for_docker(include_embeddings=True)

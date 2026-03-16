@@ -97,7 +97,7 @@ SQL_UPSERT_FIELD_EMBEDDING_RECORD = """
 INSERT INTO field_embeddings (
     id, field_key, embedding, content, field_name, field_type, measure_type,
     view_name, explore_name, model_name, label, group_label, tags, hidden, created_at
-) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+) VALUES (%s, %s, %s::vector, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 ON CONFLICT (field_key) DO UPDATE SET
     embedding = EXCLUDED.embedding,
     content = EXCLUDED.content,
@@ -126,10 +126,10 @@ SELECT
     view_name,
     field_type,
     measure_type,
-    1 - (embedding <=> :embedding) AS similarity
+    1 - (embedding <=> :embedding::vector) AS similarity
 FROM field_embeddings
 WHERE hidden = FALSE
-ORDER BY embedding <=> :embedding
+ORDER BY embedding <=> :embedding::vector
 LIMIT :limit;
 """
 
@@ -143,11 +143,11 @@ SELECT
     view_name,
     field_type,
     measure_type,
-    1 - (embedding <=> :embedding) AS similarity
+    1 - (embedding <=> :embedding::vector) AS similarity
 FROM field_embeddings
 WHERE hidden = FALSE
   AND field_type = :field_type
-ORDER BY embedding <=> :embedding
+ORDER BY embedding <=> :embedding::vector
 LIMIT :limit;
 """
 
@@ -200,7 +200,7 @@ SQL_RETRIEVE_TOP_K_BY_DISTANCE = """
 SELECT id, field_key, content, field_name, field_type, measure_type, view_name,
     explore_name, model_name, label, group_label, tags, hidden, created_at
 FROM field_embeddings
-ORDER BY embedding <=> %s
+ORDER BY embedding <=> %s::vector
 LIMIT %s;
 """
 

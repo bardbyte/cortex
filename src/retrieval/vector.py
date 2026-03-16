@@ -50,7 +50,7 @@ def _bootstrap_environment() -> None:
     load_dotenv(find_dotenv())
     if not os.getenv("CONFIG_PATH"):
         repo_root = Path(__file__).resolve().parents[2]
-        default_config_path = repo_root / "config.yml"
+        default_config_path = repo_root / "config" / "config.yml"
         os.environ["CONFIG_PATH"] = str(default_config_path)
         logger.info("[retrieval.vector] CONFIG_PATH set to: %s", default_config_path)
     else:
