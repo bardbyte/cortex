@@ -126,10 +126,10 @@ SELECT
     view_name,
     field_type,
     measure_type,
-    1 - (embedding <=> :embedding::vector) AS similarity
+    1 - (embedding <=> CAST(:embedding AS vector)) AS similarity
 FROM field_embeddings
 WHERE hidden = FALSE
-ORDER BY embedding <=> :embedding::vector
+ORDER BY embedding <=> CAST(:embedding AS vector)
 LIMIT :limit;
 """
 
@@ -143,11 +143,11 @@ SELECT
     view_name,
     field_type,
     measure_type,
-    1 - (embedding <=> :embedding::vector) AS similarity
+    1 - (embedding <=> CAST(:embedding AS vector)) AS similarity
 FROM field_embeddings
 WHERE hidden = FALSE
   AND field_type = :field_type
-ORDER BY embedding <=> :embedding::vector
+ORDER BY embedding <=> CAST(:embedding AS vector)
 LIMIT :limit;
 """
 

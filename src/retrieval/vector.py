@@ -243,7 +243,9 @@ Now extract entities from this query:
 
         for attempt in range(1, self.MAX_EXTRACTION_RETRIES + 1):
             try:
-                json_str = self.llm_client.invoke(prompt)
+                response = self.llm_client.invoke(prompt)
+                # SafeChain returns LangChain AIMessage, not raw string
+                json_str = response.content if hasattr(response, 'content') else str(response)
                 return self._parse_entity_json(json_str)
             except json.JSONDecodeError as exc:
                 logger.warning(
