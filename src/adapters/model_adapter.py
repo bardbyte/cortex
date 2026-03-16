@@ -25,9 +25,9 @@ logger = logging.getLogger(__name__)
 def get_model(model_idx: str):
     """Get a model client. Uses SafeChain on corp, local models in dev.
 
-    Only falls back to local when SafeChain is genuinely not installed
-    (ImportError). If SafeChain IS installed but model() fails, that's
-    a real config/connectivity issue — raise it, don't swallow it.
+    Only falls back to LocalModelClient when SafeChain is genuinely
+    not installed (ImportError). On corp, SafeChain provides all models
+    via config.yml model indices — no sentence-transformers needed.
     """
     try:
         from safechain.lcel import model
@@ -35,16 +35,19 @@ def get_model(model_idx: str):
         logger.info("SafeChain not installed, using local adapter for idx=%s", model_idx)
         return LocalModelClient(model_idx)
 
-    # SafeChain is installed — use it directly, no silent fallback
+    # SafeChain is installed — initialize config before calling model()
+    # Without this, model() doesn't know what index '2' maps to.
+    # bootstrap.py does this for the pipeline, but standalone scripts
+    # (like load_lookml_to_pgvector.py) skip bootstrap entirely.
     try:
-        client = model(model_idx)
-        logger.info("Using SafeChain model idx=%s", model_idx)
-        return client
-    except Exception as e:
-        raise RuntimeError(
-            f"SafeChain is installed but model('{model_idx}') failed: {e}. "
-            f"Check CONFIG_PATH and config.yml model entries."
-        ) from e
+        from ee_config.config import Config
+        Config.from_env()
+    except Exception:
+        pass  # Already initialized or not needed for this SafeChain version
+
+    client = model(model_idx)
+    logger.info("Using SafeChain model idx=%s", model_idx)
+    return client
 
 
 class LocalModelClient:
