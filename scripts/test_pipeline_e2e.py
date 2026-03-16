@@ -217,7 +217,8 @@ def run_tests():
                 if rf.resolved_filters:
                     print(f"\n  Resolved filters ({len(rf.resolved_filters)}):")
                     for f in rf.resolved_filters:
-                        print(f"    {f.field}  {f.operator}  {f.values}")
+                        neg = " [NEG]" if f.is_negated else ""
+                        print(f"    {f.field_name}  {f.operator}  '{f.value}'{neg}  (pass {f.resolution_pass}, conf={f.confidence:.0%})")
                 if rf.mandatory_filters:
                     print(f"  Mandatory filters: {len(rf.mandatory_filters)}")
                 if rf.unresolved:
