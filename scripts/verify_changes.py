@@ -230,11 +230,7 @@ try:
                   bad_types == 0,
                   "Re-ingest: field_type should be 'dimension' or 'measure', not 'view'")
 
-            # Check embedding dimension
-            result = conn.execute(sa_text(
-                "SELECT array_length(embedding::text::text[], 1) FROM field_embeddings LIMIT 1"
-            ))
-            # Alternative: check the vector column definition
+            # Check embedding column type (VECTOR(1024))
             result2 = conn.execute(sa_text(
                 "SELECT udt_name FROM information_schema.columns "
                 "WHERE table_name = 'field_embeddings' AND column_name = 'embedding'"
