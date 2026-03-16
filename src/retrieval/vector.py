@@ -360,7 +360,15 @@ Now extract entities from this query:
     def process_query(self, query: str, top_k: int = 5) -> dict[str, Any]:
         logger.info("Starting process_query for query='%s' with top_k=%d", query, top_k)
         extracted = self.extract_entities(query)
-        extracted = self._normalize_terms(query, extracted)
+
+        # Only normalize if extraction produced something real.
+        # If extraction failed (all retries), don't inject synthetic "count" —
+        # let the pipeline's confidence gate reject with action="clarify".
+        extraction_produced_content = bool(
+            extracted.measures or extracted.dimensions or extracted.filters
+        )
+        if extraction_produced_content:
+            extracted = self._normalize_terms(query, extracted)
 
         entities: list[dict[str, Any]] = []
         entity_id_counter = 1
