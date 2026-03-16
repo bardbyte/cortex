@@ -23,15 +23,28 @@ logger = logging.getLogger(__name__)
 
 
 def get_model(model_idx: str):
-    """Get a model client. Tries SafeChain first, falls back to local."""
+    """Get a model client. Uses SafeChain on corp, local models in dev.
+
+    Only falls back to local when SafeChain is genuinely not installed
+    (ImportError). If SafeChain IS installed but model() fails, that's
+    a real config/connectivity issue — raise it, don't swallow it.
+    """
     try:
         from safechain.lcel import model
+    except ImportError:
+        logger.info("SafeChain not installed, using local adapter for idx=%s", model_idx)
+        return LocalModelClient(model_idx)
+
+    # SafeChain is installed — use it directly, no silent fallback
+    try:
         client = model(model_idx)
         logger.info("Using SafeChain model idx=%s", model_idx)
         return client
-    except (ImportError, Exception) as e:
-        logger.info("SafeChain unavailable (%s), using local adapter for idx=%s", e, model_idx)
-        return LocalModelClient(model_idx)
+    except Exception as e:
+        raise RuntimeError(
+            f"SafeChain is installed but model('{model_idx}') failed: {e}. "
+            f"Check CONFIG_PATH and config.yml model entries."
+        ) from e
 
 
 class LocalModelClient:
