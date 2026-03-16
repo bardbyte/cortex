@@ -292,9 +292,9 @@ except Exception as e:
 # ── pyproject.toml ──
 print("\n[12/12] pyproject.toml")
 content = (REPO_ROOT / "pyproject.toml").read_text()
-check("[local] dependency group exists",
-      "sentence-transformers" in content or "[local]" in content,
-      "Add [local] extras group with sentence-transformers, psycopg2-binary")
+check("psycopg2-binary in dependencies",
+      "psycopg2-binary" in content or "psycopg2" in content,
+      "Add psycopg2-binary to dependencies")
 
 # ── Summary ──
 print("\n" + "=" * 70)

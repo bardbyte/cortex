@@ -477,30 +477,18 @@ if config_path:
     print(f"  Resolved: {full_config}")
     print(f"  Exists: {full_config.exists()}")
 else:
-    print("  CONFIG_PATH not set -- SafeChain won't work")
-    # Check common locations
-    candidates = [
-        REPO_ROOT / "config" / "config.yml",
-        REPO_ROOT / "config.yml",
-        Path.home() / "config.yml",
-    ]
-    for c in candidates:
+    print("  CONFIG_PATH not set — auto-searching...")
+    for c in [REPO_ROOT / "config" / "config.yml", REPO_ROOT / "config.yml"]:
         if c.exists():
-            print(f"  Found candidate: {c}")
+            print(f"  Found: {c}")
+            break
 
-# Quick SafeChain import check
-try:
-    from safechain.lcel import model
-    print("  safechain.lcel: importable")
-except ImportError as e:
-    print(f"  safechain.lcel: NOT importable ({e})")
-    print("  (Expected on personal laptop -- will work on corp)")
-
-try:
-    from ee_config.config import Config
-    print("  ee_config.config: importable")
-except ImportError as e:
-    print(f"  ee_config.config: NOT importable ({e})")
+# SafeChain import + connectivity check
+from safechain.lcel import model
+print("  safechain.lcel: OK")
+from ee_config.config import Config
+Config.from_env()
+print("  ee_config.config: OK (initialized)")
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -512,9 +500,8 @@ print(f"  Python: {sys.version}")
 print(f"  Path: {sys.executable}")
 
 key_packages = [
-    "sqlalchemy", "psycopg2", "dotenv", "yaml", "rich",
-    "fastapi", "uvicorn", "sentence_transformers", "torch",
-    "safechain", "ee_config", "google.adk",
+    "sqlalchemy", "psycopg2", "dotenv", "yaml",
+    "safechain", "ee_config",
 ]
 print(f"\n  Key packages:")
 for pkg in key_packages:

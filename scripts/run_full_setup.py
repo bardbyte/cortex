@@ -146,31 +146,19 @@ def step_0_env_check() -> bool:
         fail(f"config/constants.py import failed: {e}")
         return False
 
-    # Test SafeChain
-    safechain_ok = False
-    try:
-        from safechain.lcel import model  # noqa: F401
-        ok("SafeChain: importable")
-        safechain_ok = True
-    except ImportError:
-        warn("SafeChain not available — will use local model adapter")
-
-    # Test embedding model (real API call — catches auth / connectivity issues early)
+    # Test SafeChain + embedding model (real API call)
     try:
         from src.adapters.model_adapter import get_model
-        info("Testing embedding model (single API call)...")
+        info("Testing SafeChain embedding model (single API call)...")
         embed_client = get_model("2")
         test_vec = embed_client.embed_query("test query")
         dim = len(test_vec)
-        ok(f"Embedding model: {dim}-dim vectors")
+        ok(f"SafeChain + BGE embedding: {dim}-dim vectors")
         if dim != 1024:
-            warn(f"Expected 1024-dim, got {dim} — check model index")
+            warn(f"Expected 1024-dim, got {dim} — check config.yml model '2'")
     except Exception as e:
-        fail(f"Embedding model FAILED: {e}")
-        if safechain_ok:
-            fail("SafeChain is importable but model('2') failed — check config.yml model entries")
-        else:
-            fail("Install sentence-transformers for local embedding: pip install sentence-transformers")
+        fail(f"SafeChain embedding FAILED: {e}")
+        fail("Check: CONFIG_PATH, config.yml model entries, CIBIS credentials in .env")
         return False
 
     return True

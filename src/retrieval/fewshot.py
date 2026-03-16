@@ -27,7 +27,7 @@ What to implement:
 
 Dependencies:
   - faiss-cpu
-  - An embedding model (text-embedding-005 or sentence-transformers)
+  - SafeChain embedding model (BGE-large-en, model index "2")
   - Golden query JSON files (see tests/golden_queries/_template.json)
 """
 

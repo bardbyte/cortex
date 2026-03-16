@@ -101,8 +101,7 @@ class RetrievalOrchestrator:
         pg_conn: Active psycopg connection (shared by pgvector and AGE).
         embed_fn: Callable that turns text → 1024-dim embedding vector.
                   Signature: (text: str) -> list[float]
-                  In production, this calls SafeChain's BGE-large-en endpoint.
-                  Locally, uses sentence-transformers via model_adapter.
+                  Calls SafeChain's BGE-large-en endpoint (model index "2").
         model_name: Optional model scope (e.g. "finance") to narrow vector search.
     """
 
