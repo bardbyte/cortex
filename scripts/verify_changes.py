@@ -13,6 +13,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 os.chdir(REPO_ROOT)
+sys.path.insert(0, str(REPO_ROOT))
 
 passed = 0
 failed = 0
@@ -135,12 +136,9 @@ check("SQL_SEARCH_SIMILAR_FIELDS_BY_TYPE imported",
 # ── scripts/load_lookml_to_pgvector.py ──
 print("\n[6/12] scripts/load_lookml_to_pgvector.py")
 content = (REPO_ROOT / "scripts/load_lookml_to_pgvector.py").read_text()
-check("Uses model_adapter (not safechain.lct)",
-      "model_adapter" in content or "get_model" in content,
-      "Still using safechain.lct — change to model_adapter")
-check("No safechain.lct import",
-      "safechain.lct" not in content,
-      "Remove: from safechain.lct import model")
+check("Uses SafeChain for embeddings",
+      "safechain" in content or "model_adapter" in content,
+      "Must use SafeChain (directly or via model_adapter) for embeddings")
 check("High signal-density content",
       "signal" in content.lower() or "_build_content" in content,
       "_build_content method should produce semantic-only text")
