@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Verify that all Round 1 + Round 3 changes are correctly applied.
+"""Verify that pipeline setup is correctly applied.
 
-Run on the corp laptop after cherry-picking or manually applying changes.
+Run on the corp laptop after setup.
 Usage: python scripts/verify_changes.py
 
-Each check prints PASS or FAIL. Fix any FAILs before re-ingesting.
+Each check prints PASS or FAIL. Fix any FAILs before running the pipeline.
 """
 
 import sys
@@ -178,21 +178,12 @@ check("resolve_filters imported",
       "resolve_filters" in content,
       "Pipeline should call filter resolution for top explore")
 
-# ── src/retrieval/orchestrator.py ──
+# ── src/retrieval/orchestrator.py (DELETED — replaced by pipeline.py) ──
 print("\n[9/12] src/retrieval/orchestrator.py")
-content = (REPO_ROOT / "src/retrieval/orchestrator.py").read_text()
-check("Imports from filters.py (not inline FILTER_VALUE_MAP)",
-      "from src.retrieval.filters import" in content,
-      "FILTER_VALUE_MAP should be imported from filters.py, not defined inline")
-check("No inline FILTER_VALUE_MAP dict",
-      '"millennials": "Millennial"' not in content or "from src.retrieval.filters" in content,
-      "Remove inline FILTER_VALUE_MAP — it's now in filters.py")
-check("1024-dim (not 768)",
-      "1024" in content,
-      "Embedding dim comment should say 1024")
-check("EXPLORE_PARTITION_FIELDS for partition field name",
-      "EXPLORE_PARTITION_FIELDS" in content,
-      "Partition field should be explore-specific, not hardcoded 'partition_date'")
+orchestrator_path = REPO_ROOT / "src/retrieval/orchestrator.py"
+check("orchestrator.py removed (replaced by pipeline.py)",
+      not orchestrator_path.exists(),
+      "Delete src/retrieval/orchestrator.py — pipeline.py handles scoring now")
 
 # ── New files that must exist ──
 print("\n[10/12] New files that must exist")

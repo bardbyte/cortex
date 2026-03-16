@@ -196,10 +196,14 @@ def step_1_create_hybrid_tables() -> bool:
             ok("Graph 'lookml_schema' created")
 
         # 1b: Create tables via individual DDL statements
-        #     (avoids $$ parsing issues with multi-statement text() blocks)
+        #     Reset search_path first — Step 1a set it to ag_catalog for AGE,
+        #     and the connection pool may reuse that connection. Without this,
+        #     tables get created in ag_catalog instead of public.
         info("Creating hybrid tables...")
 
         ddl_statements = [
+            # Reset search_path to public (critical — AGE contaminated the pool)
+            'SET search_path = "$user", public',
             # ── explore_field_index ──
             "DROP TABLE IF EXISTS explore_field_index CASCADE",
             """CREATE TABLE explore_field_index (
