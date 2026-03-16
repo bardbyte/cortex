@@ -27,7 +27,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from ee_config.config import Config
+from safechain.tools.mcp import MCPToolLoader, MCPToolAgent
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
+
 from src.retrieval.pipeline import retrieve_with_graph_validation, get_top_explore
+from src.pipeline.orchestrator import CortexOrchestrator, ConversationStore
 from config.constants import EXPLORE_DESCRIPTIONS
 
 logger = logging.getLogger(__name__)
@@ -52,6 +57,67 @@ app.add_middleware(
 _orchestrator = None
 
 
+class ReactAgent:
+    """Lightweight ReAct loop over SafeChain's MCPToolAgent.
+
+    Provides the .run(messages) interface CortexOrchestrator expects.
+    """
+
+    def __init__(self, model_id: str, tools: list, max_iterations: int = 10):
+        self.agent = MCPToolAgent(model_id, tools)
+        self.max_iterations = max_iterations
+
+    @staticmethod
+    def _to_langchain(messages: list[dict]) -> list:
+        lc = []
+        for msg in messages:
+            role = msg.get("role", "")
+            content = msg.get("content", "")
+            if role == "system":
+                lc.append(SystemMessage(content=content))
+            elif role == "user":
+                lc.append(HumanMessage(content=content))
+            elif role == "assistant":
+                lc.append(AIMessage(content=content))
+            elif role == "tool":
+                lc.append(ToolMessage(
+                    content=content,
+                    tool_call_id=msg.get("tool_call_id", ""),
+                    name=msg.get("name", ""),
+                ))
+        return lc
+
+    async def run(self, messages: list[dict]) -> dict:
+        content = ""
+        iteration = 0
+        while iteration < self.max_iterations:
+            iteration += 1
+            result = await self.agent.ainvoke(self._to_langchain(messages))
+            if isinstance(result, dict):
+                content = result.get("content", "")
+                tool_results = result.get("tool_results", [])
+            else:
+                content = getattr(result, "content", str(result))
+                tool_results = []
+            if not tool_results:
+                return {"content": content}
+            if content:
+                messages.append({"role": "assistant", "content": content})
+            for tr in tool_results:
+                tool_name = tr.get("tool", "unknown")
+                tool_content = (
+                    f"Error: {tr['error']}" if "error" in tr
+                    else str(tr.get("result", ""))
+                )
+                messages.append({
+                    "role": "tool",
+                    "name": tool_name,
+                    "content": tool_content,
+                    "tool_call_id": f"call_{iteration}_{tool_name}",
+                })
+        return {"content": content or f"Max iterations ({self.max_iterations}) reached."}
+
+
 @app.on_event("startup")
 async def _init_orchestrator():
     """Initialize the CortexOrchestrator at server startup.
@@ -61,40 +127,24 @@ async def _init_orchestrator():
     """
     global _orchestrator
 
-    try:
-        from ee_config.config import Config
-        from safechain.tools.mcp import MCPToolLoader
-        from access_llm.chat import AgentOrchestrator
-        from src.pipeline.orchestrator import CortexOrchestrator, ConversationStore
+    config = Config.from_env()
+    tools = await MCPToolLoader.load_tools(config)
+    logger.info("Loaded %d MCP tools", len(tools))
 
-        config = Config.from_env()
-        tools = await MCPToolLoader.load_tools(config)
-        logger.info("Loaded %d MCP tools", len(tools))
+    react_agent = ReactAgent(
+        model_id="3",  # Gemini 2.5 Flash
+        tools=tools,
+        max_iterations=10,
+    )
 
-        react_agent = AgentOrchestrator(
-            model_id="3",  # Gemini 2.5 Flash
-            tools=tools,
-            max_iterations=5,  # Reduced from 15 — augmented prompt cuts iterations
-        )
+    _orchestrator = CortexOrchestrator(
+        react_agent=react_agent,
+        conversations=ConversationStore(max_turns=20),
+        classifier_model_idx="3",
+    )
 
-        conversations = ConversationStore(max_turns=20)
-
-        _orchestrator = CortexOrchestrator(
-            react_agent=react_agent,
-            conversations=conversations,
-            classifier_model_idx="3",
-        )
-
-        # Pre-warm caches — first request won't pay cold-start penalties
-        await _orchestrator.warm_up()
-
-        logger.info("CortexOrchestrator initialized successfully")
-
-    except Exception as e:
-        logger.warning(
-            "Orchestrator init failed: %s — v1 endpoints unavailable, v0 still works", e
-        )
-        _orchestrator = None
+    await _orchestrator.warm_up()
+    logger.info("CortexOrchestrator initialized successfully")
 
 
 # ── Request / Response Models ────────────────────────────────────────
@@ -305,7 +355,6 @@ def capabilities() -> dict[str, Any]:
 
 def _check_safechain() -> str:
     try:
-        from ee_config.config import Config
         Config.from_env()
         return "ok"
     except Exception as e:
@@ -314,9 +363,9 @@ def _check_safechain() -> str:
 
 
 def _check_postgresql() -> str:
+    from src.connectors.postgres_age_client import get_engine
+    from sqlalchemy import text
     try:
-        from src.connectors.postgres_age_client import get_engine
-        from sqlalchemy import text
         engine = get_engine()
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
