@@ -314,6 +314,20 @@ Now extract entities from this query:
         logger.info("Generating embedding for text snippet (len=%d, is_query=%s)", len(text), is_query)
         return self.embedding_client.embed_query(text)
 
+    def embed_texts_batch(self, texts: list[str], is_query: bool = True) -> list[list[float]]:
+        """Batch-embed multiple texts in a single API call.
+
+        Uses embed_documents() (LangChain Embeddings interface) to send all texts
+        in one round-trip instead of N sequential embed_query() calls.
+        For N entities this cuts N×50ms → ~80ms (single batch).
+        """
+        if not texts:
+            return []
+        if is_query:
+            texts = [BGE_QUERY_PREFIX + t for t in texts]
+        logger.info("Batch embedding %d texts (is_query=%s)", len(texts), is_query)
+        return self.embedding_client.embed_documents(texts)
+
     def search_similar_fields(
         self,
         entity_text: str,
@@ -358,56 +372,64 @@ Now extract entities from this query:
         ]
         return results
 
-    def process_query(self, query: str, top_k: int = 5) -> dict[str, Any]:
-        logger.info("Starting process_query for query='%s' with top_k=%d", query, top_k)
-        extracted, extraction_failures = self.extract_entities(query)
+    def process_query(
+        self,
+        query: str,
+        top_k: int = 5,
+        pre_extracted: ExtractedEntities | None = None,
+    ) -> dict[str, Any]:
+        """Extract entities and match to database fields via embedding + pgvector.
 
-        # Only normalize if extraction produced something real.
-        # If extraction failed (all retries), don't inject synthetic "count" —
-        # let the pipeline's confidence gate reject with action="clarify".
-        extraction_produced_content = bool(
-            extracted.measures or extracted.dimensions or extracted.filters
-        )
-        if extraction_produced_content:
-            extracted = self._normalize_terms(query, extracted)
+        Args:
+            query: User natural language query
+            top_k: Number of candidate fields per entity
+            pre_extracted: Pre-extracted entities from upstream classifier.
+                When provided, skips the LLM extraction call (~300ms saved).
+                The classifier already extracts {metrics, dimensions, filters, time_range}
+                — no reason to call the LLM again with a different prompt.
+        """
+        t0 = time.time()
+        logger.info("Starting process_query for query='%s' with top_k=%d", query, top_k)
+
+        if pre_extracted is not None:
+            logger.info("Using pre-extracted entities (skipping LLM extraction)")
+            extracted = self._normalize_terms(query, pre_extracted)
+            extraction_failures = 0
+        else:
+            extracted, extraction_failures = self.extract_entities(query)
+            extraction_produced_content = bool(
+                extracted.measures or extracted.dimensions or extracted.filters
+            )
+            if extraction_produced_content:
+                extracted = self._normalize_terms(query, extracted)
+
+        t_extract = time.time()
+        logger.info("[TIMING] extraction: %.0fms", (t_extract - t0) * 1000)
 
         entities: list[dict[str, Any]] = []
         entity_id_counter = 1
 
-        for measure_text in extracted.measures:
-            logger.info("Processing measure entity '%s'", measure_text)
-            embedding = self.embed_text(measure_text, is_query=True)
-            matches = self.search_similar_fields(
-                measure_text, embedding, limit=top_k, field_type="measure"
-            )
-            candidates = [
-                {
-                    "explore": match.explore_name,
-                    "field_key": match.field_key,
-                    "field_name": match.field_name,
-                    "label": match.label,
-                    "view_name": match.view_name,
-                    "measure_type": match.measure_type,
-                    "similarity": match.similarity,
-                }
-                for match in matches
-            ]
-            entities.append({
-                "id": f"E{entity_id_counter}",
-                "type": "measure",
-                "name": measure_text,
-                "weight": 1.0,
-                "candidates": candidates,
-            })
-            entity_id_counter += 1
+        # Batch embed all measure + dimension texts in one API call
+        embed_jobs: list[tuple[str, str, str]] = []  # (text, type, field_type)
+        for m in extracted.measures:
+            embed_jobs.append((m, "measure", "measure"))
+        for d in extracted.dimensions:
+            embed_jobs.append((d, "dimension", "dimension"))
 
-        for dimension_text in extracted.dimensions:
-            logger.info("Processing dimension entity '%s'", dimension_text)
-            # No generic enrichment — embed the raw dimension text.
-            # The embedding documents already contain rich synonyms via LookML descriptions.
-            embedding = self.embed_text(dimension_text, is_query=True)
+        if embed_jobs:
+            all_texts = [job[0] for job in embed_jobs]
+            all_embeddings = self.embed_texts_batch(all_texts, is_query=True)
+        else:
+            all_embeddings = []
+
+        t_embed = time.time()
+        logger.info("[TIMING] batch_embed (%d texts): %.0fms", len(embed_jobs), (t_embed - t_extract) * 1000)
+
+        # Search pgvector for each entity using pre-computed embeddings
+        for i, (entity_text, entity_type, field_type) in enumerate(embed_jobs):
+            embedding = all_embeddings[i]
             matches = self.search_similar_fields(
-                dimension_text, embedding, limit=top_k, field_type="dimension"
+                entity_text, embedding, limit=top_k, field_type=field_type
             )
             candidates = [
                 {
@@ -423,8 +445,8 @@ Now extract entities from this query:
             ]
             entities.append({
                 "id": f"E{entity_id_counter}",
-                "type": "dimension",
-                "name": dimension_text,
+                "type": entity_type,
+                "name": entity_text,
                 "weight": 1.0,
                 "candidates": candidates,
             })
@@ -453,7 +475,10 @@ Now extract entities from this query:
                 "weight": 0.8,
             })
 
-        logger.info("process_query complete: total_entities=%d, extraction_failures=%d", len(entities), extraction_failures)
+        t_end = time.time()
+        logger.info("[TIMING] pgvector_search (%d queries): %.0fms", len(embed_jobs), (t_end - t_embed) * 1000)
+        logger.info("[TIMING] process_query total: %.0fms (entities=%d, failures=%d)",
+                    (t_end - t0) * 1000, len(entities), extraction_failures)
         return {"query": query, "entities": entities, "extraction_failures": extraction_failures}
 
     def format_results(self, results: dict[str, Any]) -> str:

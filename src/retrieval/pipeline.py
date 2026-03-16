@@ -37,10 +37,11 @@ from __future__ import annotations
 import json
 import logging
 import threading
+import time
 from dataclasses import dataclass
 from typing import Any
 
-from src.retrieval.vector import EntityExtractor
+from src.retrieval.vector import EntityExtractor, ExtractedEntities
 from src.retrieval.graph_search import get_explores_for_fields, check_filter_fields_in_explores
 from src.retrieval.filters import resolve_filters, FilterResolutionResult
 from config.constants import (
@@ -143,6 +144,8 @@ def retrieve_with_graph_validation(
     top_k: int = 5,
     llm_model_idx: str = "",
     embedding_model_idx: str = "",
+    pre_extracted: ExtractedEntities | None = None,
+    extractor: EntityExtractor | None = None,
 ) -> PipelineResult:
     """Execute full retrieval pipeline: entity extraction + vector search + explore scoring.
 
@@ -151,22 +154,36 @@ def retrieve_with_graph_validation(
         top_k: Number of candidate fields to retrieve per entity
         llm_model_idx: LLM model index for entity extraction (default from constants)
         embedding_model_idx: Embedding model index (default from constants)
+        pre_extracted: Pre-extracted entities from upstream classifier.
+            When provided, skips the LLM extraction call inside EntityExtractor (~300ms saved).
+        extractor: Pre-created EntityExtractor instance. When provided, skips
+            per-request model client initialization. Pass this from the orchestrator
+            to reuse the same model clients across all requests.
 
     Returns:
         PipelineResult with scored explores and retrieval metadata
     """
+    t_pipeline = time.time()
     logger.info("Starting retrieval pipeline for query: %s", query)
 
     # Step 1: Initialize extractor and process query
-    logger.info("[1/6] Extracting entities from query...")
-    kwargs = {}
-    if llm_model_idx:
-        kwargs["llm_model_idx"] = llm_model_idx
-    if embedding_model_idx:
-        kwargs["embedding_model_idx"] = embedding_model_idx
-    extractor = EntityExtractor(**kwargs)
-    raw_results = extractor.process_query(query, top_k)
+    if pre_extracted is not None:
+        logger.info("[1/6] Using pre-extracted entities (skipping LLM call)...")
+    else:
+        logger.info("[1/6] Extracting entities from query...")
+
+    if extractor is None:
+        kwargs = {}
+        if llm_model_idx:
+            kwargs["llm_model_idx"] = llm_model_idx
+        if embedding_model_idx:
+            kwargs["embedding_model_idx"] = embedding_model_idx
+        extractor = EntityExtractor(**kwargs)
+
+    raw_results = extractor.process_query(query, top_k, pre_extracted=pre_extracted)
     extracted_entities = raw_results.get("entities", [])
+    t_after_extract = time.time()
+    logger.info("[TIMING] entity_extraction+embedding+pgvector: %.0fms", (t_after_extract - t_pipeline) * 1000)
 
     # Step 2: Confidence gate — reject if ALL entity similarities are below floor.
     # Prevents garbage queries from producing garbage results.
@@ -201,6 +218,8 @@ def retrieve_with_graph_validation(
     # Step 3: Compute explore description similarities (P2 tiebreaker)
     logger.info("[2/6] Computing explore description similarities...")
     explore_desc_sims = _get_explore_desc_similarities(query, extractor)
+    t_after_desc = time.time()
+    logger.info("[TIMING] explore_desc_similarity: %.0fms", (t_after_desc - t_after_extract) * 1000)
 
     # Step 4: Score explores using hybrid table validation
     logger.info("[3/6] Scoring explores via explore_field_index...")
@@ -285,6 +304,9 @@ def retrieve_with_graph_validation(
     else:
         action = "proceed"
 
+    t_end = time.time()
+    logger.info("[TIMING] scoring+filters+normalization: %.0fms", (t_end - t_after_desc) * 1000)
+    logger.info("[TIMING] retrieve_with_graph_validation TOTAL: %.0fms", (t_end - t_pipeline) * 1000)
     logger.info("[6/6] Pipeline complete!")
     pipeline_result = PipelineResult(
         query=query,
