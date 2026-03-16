@@ -419,7 +419,7 @@ def normalize_time_expression(raw: str) -> str:
 
         if pattern_type == "quarter_year":
             quarter = match.group(1).lower()
-            year = match.group(2)
+            year = int(match.group(2))
             months = _QUARTER_MONTHS.get(quarter) or _QUARTER_MONTHS.get(f"q{quarter}")
             if months:
                 start_month, end_month = months
