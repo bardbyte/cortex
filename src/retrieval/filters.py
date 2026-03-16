@@ -44,6 +44,7 @@ Integration point:
 
 from __future__ import annotations
 
+import calendar
 import json
 import logging
 import re
@@ -423,12 +424,7 @@ def normalize_time_expression(raw: str) -> str:
             if months:
                 start_month, end_month = months
                 # Last day of the end month
-                if end_month == 12:
-                    end_day = 31
-                elif end_month in (3, 6, 9):
-                    end_day = 30
-                else:
-                    end_day = 28  # Feb fallback
+                end_day = calendar.monthrange(year, end_month)[1]
                 return f"{year}-{start_month:02d}-01 to {year}-{end_month:02d}-{end_day:02d}"
 
         elif pattern_type == "relative":
@@ -436,7 +432,7 @@ def normalize_time_expression(raw: str) -> str:
             n = match.group(1)
             unit = match.group(2).lower()
             # Looker uses plural for N > 1
-            unit_plural = f"{unit}s" if int(n) > 1 else f"{unit}s"
+            unit_plural = f"{unit}s" if int(n) > 1 else unit
             return f"last {n} {unit_plural}"
 
         elif pattern_type == "this_period":
