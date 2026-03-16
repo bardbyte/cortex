@@ -37,10 +37,25 @@ from typing import Any
 from functools import lru_cache
 
 from dotenv import find_dotenv, load_dotenv
+
+# ── Bootstrap FIRST (before any SafeChain imports) ──────────────────
+# Matches the proven pattern from access_llm/chat.py:
+#   1. load_dotenv()        — get CONFIG_PATH, CIBIS creds into env
+#   2. import safechain     — module picks up env state
+#   3. Config.from_env()    — initialize SafeChain config
+load_dotenv(find_dotenv())
+if not os.getenv("CONFIG_PATH"):
+    _repo_root = Path(__file__).resolve().parents[1]
+    os.environ["CONFIG_PATH"] = str(_repo_root / "config" / "config.yml")
+
+from ee_config.config import Config
+from safechain.lcel import model as safechain_model
+
+Config.from_env()
+# ── End bootstrap ───────────────────────────────────────────────────
+
 from sqlalchemy import text
 from sqlalchemy.engine import Engine, URL, create_engine
-
-from src.adapters.model_adapter import get_model
 
 from config.constants import (
     EMBED_MODEL_IDX,
@@ -59,19 +74,6 @@ from config.constants import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-def _bootstrap_environment() -> None:
-    """Load .env and ensure CONFIG_PATH is available."""
-    load_dotenv(find_dotenv())
-    if not os.getenv("CONFIG_PATH"):
-        repo_root = Path(__file__).resolve().parents[1]
-        default_config_path = repo_root / "config.yml"
-        os.environ["CONFIG_PATH"] = str(default_config_path)
-        logger.info("[load_lookml_to_pgvector] CONFIG_PATH set to: %s", default_config_path)
-
-
-_bootstrap_environment()
 
 
 @dataclass
@@ -95,11 +97,11 @@ class FieldEmbeddingRecord:
 
 
 class FieldEmbeddingBuilder:
-    """Builds embeddings for field records using model adapter."""
+    """Builds embeddings for field records using SafeChain BGE model."""
 
     def __init__(self, model_idx: str = EMBED_MODEL_IDX):
         self.model_idx = model_idx
-        self.embedding_client = get_model(self.model_idx)
+        self.embedding_client = safechain_model(model_idx)
 
     def embed_records(self, records: list[FieldEmbeddingRecord]) -> list[FieldEmbeddingRecord]:
         logger.info("Starting embedding generation for %s records using model ID '%s'", len(records), self.model_idx)

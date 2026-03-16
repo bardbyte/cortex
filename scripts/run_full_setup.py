@@ -148,12 +148,16 @@ def step_0_env_check() -> bool:
 
     # Test SafeChain + embedding model (real API call)
     try:
-        from src.adapters.model_adapter import get_model
-        info("Testing SafeChain embedding model (single API call)...")
-        embed_client = get_model("2")
+        from ee_config.config import Config
+        Config.from_env()
+        ok("Config.from_env(): OK")
+
+        from safechain.lcel import model as sc_model
+        info("Testing BGE embedding (single API call)...")
+        embed_client = sc_model("2")
         test_vec = embed_client.embed_query("test query")
         dim = len(test_vec)
-        ok(f"SafeChain + BGE embedding: {dim}-dim vectors")
+        ok(f"SafeChain model('2') + embed_query: {dim}-dim vectors")
         if dim != 1024:
             warn(f"Expected 1024-dim, got {dim} — check config.yml model '2'")
     except Exception as e:
