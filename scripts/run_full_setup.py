@@ -310,21 +310,26 @@ def step_2_reingest_pgvector() -> bool:
         from scripts.load_lookml_to_pgvector import LookMLParser, PostgresOperations
 
         engine = get_engine()
-
-        # 2a: Ensure table + index exist (idempotent, needed for fresh DB)
         pg_ops = PostgresOperations()
-        pg_ops.create_table()
-        pg_ops.create_index()
 
-        # 2b: Check old state + truncate
+        # 2a: Check old state, then DROP + recreate with correct schema
+        #     CREATE TABLE IF NOT EXISTS won't fix column type mismatches
+        #     from old schema (e.g. tags TEXT[] vs TEXT), so we must DROP first.
+        old_count = 0
         with engine.connect() as conn:
-            old_count = conn.execute(sa_text("SELECT COUNT(*) FROM field_embeddings")).scalar()
+            exists = conn.execute(sa_text(
+                "SELECT 1 FROM information_schema.tables WHERE table_name = 'field_embeddings'"
+            )).scalar()
+            if exists:
+                old_count = conn.execute(sa_text("SELECT COUNT(*) FROM field_embeddings")).scalar()
         info(f"Current records: {old_count}")
 
-        info("Truncating old records...")
+        info("Dropping old table + recreating with correct schema...")
         with engine.begin() as conn:
-            conn.execute(sa_text("TRUNCATE field_embeddings"))
-        ok(f"Truncated {old_count} old records")
+            conn.execute(sa_text("DROP TABLE IF EXISTS field_embeddings"))
+        pg_ops.create_table()
+        pg_ops.create_index()
+        ok(f"Dropped old table ({old_count} records) and recreated with correct schema")
 
         # 2c: Run INLINE (same process — SafeChain already initialized in Step 0)
         info("Running: parse LookML → generate embeddings → ingest to pgvector")

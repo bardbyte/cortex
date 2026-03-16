@@ -97,7 +97,7 @@ SQL_UPSERT_FIELD_EMBEDDING_RECORD = """
 INSERT INTO field_embeddings (
     id, field_key, embedding, content, field_name, field_type, measure_type,
     view_name, explore_name, model_name, label, group_label, tags, hidden, created_at
-) VALUES (%s, %s, %s::vector, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 ON CONFLICT (field_key) DO UPDATE SET
     embedding = EXCLUDED.embedding,
     content = EXCLUDED.content,
