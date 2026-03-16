@@ -16,8 +16,8 @@ Steps:
 import os
 import sys
 import json
-import time
 import subprocess
+import time
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -320,28 +320,26 @@ def step_2_reingest_pgvector() -> bool:
             conn.execute(sa_text("TRUNCATE field_embeddings"))
         ok(f"Truncated {old_count} old records")
 
-        # 2c: Run pipeline subprocess
+        # 2c: Run INLINE (same process — SafeChain already initialized in Step 0)
         info("Running: parse LookML → generate embeddings → ingest to pgvector")
         info("This calls SafeChain for ~129 embeddings — may take 2-5 minutes...")
         print()
 
         t0 = time.time()
-        result = subprocess.run(
-            [sys.executable, "-m", "scripts.load_lookml_to_pgvector", "--mode", "pipeline"],
-            cwd=str(REPO_ROOT),
-            env=os.environ.copy(),
-            timeout=600,
-        )
+
+        from scripts.load_lookml_to_pgvector import LookMLParser, PostgresOperations
+
+        pg_ops = PostgresOperations()
+        pg_ops.create_table()
+        pg_ops.create_index()
+
+        parser = LookMLParser()
+        records = parser.get_records_for_docker(include_embeddings=True)
+        info(f"Parsed {len(records)} records, ingesting...")
+        inserted = pg_ops.ingest_records(records)
+
         elapsed = time.time() - t0
-
-        print()
-
-        if result.returncode != 0:
-            fail(f"Pipeline exited with code {result.returncode}")
-            fail("Check the output above for the actual error")
-            return False
-
-        ok(f"Pipeline completed in {elapsed:.1f}s")
+        ok(f"Pipeline completed in {elapsed:.1f}s — {inserted} records ingested")
 
         # 2d: Verify new state
         with engine.connect() as conn:
@@ -391,9 +389,6 @@ def step_2_reingest_pgvector() -> bool:
 
         return True
 
-    except subprocess.TimeoutExpired:
-        fail("Pipeline timed out after 10 minutes — SafeChain may be unresponsive")
-        return False
     except Exception as e:
         fail(f"Re-ingest failed: {e}")
         import traceback
@@ -407,34 +402,25 @@ def step_3_populate_hybrid_tables() -> bool:
     step_header(3, 5, "Populate Hybrid Tables from LookML")
 
     try:
-        t0 = time.time()
-        result = subprocess.run(
-            [sys.executable, "scripts/load_lookml_to_graph.py"],
-            cwd=str(REPO_ROOT),
-            env=os.environ.copy(),
-            capture_output=True,
-            text=True,
-            timeout=120,
+        from src.connectors.postgres_age_client import get_engine
+        from sqlalchemy import text as sa_text
+        from scripts.load_lookml_to_graph import (
+            populate_explore_field_index,
+            populate_partition_filters,
         )
+
+        t0 = time.time()
+
+        info("Populating explore_field_index...")
+        populate_explore_field_index()
+
+        info("Populating explore_partition_filters...")
+        populate_partition_filters()
+
         elapsed = time.time() - t0
-
-        if result.returncode != 0:
-            fail(f"load_lookml_to_graph.py failed (exit code {result.returncode})")
-            if result.stderr:
-                for line in result.stderr.strip().split("\n")[-10:]:
-                    fail(f"  {line}")
-            return False
-
-        for line in result.stdout.strip().split("\n"):
-            if line.strip():
-                info(line.strip())
-
         ok(f"Completed in {elapsed:.1f}s")
 
         # Verify
-        from src.connectors.postgres_age_client import get_engine
-        from sqlalchemy import text as sa_text
-
         with get_engine().connect() as conn:
             efi_count = conn.execute(sa_text(
                 "SELECT COUNT(*) FROM explore_field_index"
@@ -462,9 +448,6 @@ def step_3_populate_hybrid_tables() -> bool:
 
         return True
 
-    except subprocess.TimeoutExpired:
-        fail("Timed out after 2 minutes")
-        return False
     except Exception as e:
         fail(f"Failed: {e}")
         import traceback
@@ -478,39 +461,33 @@ def step_4_build_filter_catalog() -> bool:
     step_header(4, 5, "Build Filter Catalog")
 
     try:
+        from scripts.load_lookml_to_pgvector import LookMLParser
+
         t0 = time.time()
-        result = subprocess.run(
-            [sys.executable, "-m", "scripts.load_lookml_to_pgvector", "--mode", "catalog"],
-            cwd=str(REPO_ROOT),
-            env=os.environ.copy(),
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-        elapsed = time.time() - t0
 
-        if result.returncode != 0:
-            fail(f"Catalog build failed (exit code {result.returncode})")
-            if result.stderr:
-                for line in result.stderr.strip().split("\n")[-5:]:
-                    fail(f"  {line}")
-            return False
+        parser = LookMLParser()
+        catalog = parser.build_filter_catalog()
 
-        for line in result.stdout.strip().split("\n"):
-            if any(kw in line for kw in ["Value", "Synonym", "Yesno", "Partition", "Written", "CATALOG"]):
-                info(line.strip())
+        # Serialize — convert sets to sorted lists for JSON
+        serializable = {
+            "value_map": catalog["value_map"],
+            "synonyms": catalog["synonyms"],
+            "yesno_dimensions": sorted(catalog["yesno_dimensions"]),
+            "partition_fields": catalog["partition_fields"],
+            "explore_views": catalog["explore_views"],
+        }
 
         catalog_path = REPO_ROOT / "config" / "filter_catalog.json"
-        if not catalog_path.exists():
-            fail("config/filter_catalog.json was NOT created")
-            return False
+        catalog_path.write_text(json.dumps(serializable, indent=2, sort_keys=True) + "\n")
 
-        catalog = json.loads(catalog_path.read_text())
+        elapsed = time.time() - t0
+
         vm = len(catalog.get("value_map", {}))
         syn = len(catalog.get("synonyms", {}))
         pf = len(catalog.get("partition_fields", {}))
         ev = len(catalog.get("explore_views", {}))
         ok(f"filter_catalog.json: {vm} value maps, {syn} synonym groups, {pf} partitions, {ev} explores")
+        ok(f"Written to {catalog_path}")
         ok(f"Completed in {elapsed:.1f}s")
         return True
 
