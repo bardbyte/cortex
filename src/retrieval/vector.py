@@ -266,12 +266,13 @@ Now extract entities from this query:
 
     MAX_EXTRACTION_RETRIES = 3
 
-    def extract_entities(self, query: str) -> ExtractedEntities:
+    def extract_entities(self, query: str) -> tuple[ExtractedEntities, int]:
         """Extract entities from query with retry on LLM/JSON failure.
 
-        On failure: retries once (LLM responses are non-deterministic, a retry
-        often produces valid JSON). If both attempts fail, returns empty entities
-        and logs at ERROR level so the pipeline's confidence gate can reject.
+        Returns:
+            Tuple of (extracted_entities, failed_attempts).
+            failed_attempts = 0 means first-try success (high quality).
+            failed_attempts = MAX means total failure (empty entities).
         """
         prompt = self.ENTITY_EXTRACTION_PROMPT.replace("{query}", query)
 
@@ -281,7 +282,7 @@ Now extract entities from this query:
                 # SafeChain returns LangChain AIMessage, not raw string
                 json_str = response.content if hasattr(response, 'content') else str(response)
                 logger.debug("LLM raw response (attempt %d): %s", attempt, json_str[:200])
-                return self._parse_entity_json(json_str)
+                return self._parse_entity_json(json_str), attempt - 1
             except json.JSONDecodeError as exc:
                 # Log the raw response so we can see what the LLM actually returned
                 logger.warning(
@@ -298,7 +299,7 @@ Now extract entities from this query:
             "Entity extraction failed after %d attempts for query: %s",
             self.MAX_EXTRACTION_RETRIES, query,
         )
-        return ExtractedEntities(measures=[], dimensions=[], time_range=None, filters=[])
+        return ExtractedEntities(measures=[], dimensions=[], time_range=None, filters=[]), self.MAX_EXTRACTION_RETRIES
 
     def embed_text(self, text: str, is_query: bool = True) -> list[float]:
         """Generate embedding with BGE instruction prefix for queries.
@@ -359,7 +360,7 @@ Now extract entities from this query:
 
     def process_query(self, query: str, top_k: int = 5) -> dict[str, Any]:
         logger.info("Starting process_query for query='%s' with top_k=%d", query, top_k)
-        extracted = self.extract_entities(query)
+        extracted, extraction_failures = self.extract_entities(query)
 
         # Only normalize if extraction produced something real.
         # If extraction failed (all retries), don't inject synthetic "count" —
@@ -452,8 +453,8 @@ Now extract entities from this query:
                 "weight": 0.8,
             })
 
-        logger.info("process_query complete: total_entities=%d", len(entities))
-        return {"query": query, "entities": entities}
+        logger.info("process_query complete: total_entities=%d, extraction_failures=%d", len(entities), extraction_failures)
+        return {"query": query, "entities": entities, "extraction_failures": extraction_failures}
 
     def format_results(self, results: dict[str, Any]) -> str:
         output = []

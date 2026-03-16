@@ -92,7 +92,7 @@ class PipelineResult:
     """Final output from the retrieval pipeline."""
     query: str
     explores: list[ScoredExplore]
-    action: str = "proceed"       # "proceed" | "clarify" | "no_match"
+    action: str = "proceed"       # "proceed" | "disambiguate" | "clarify" | "no_match"
     confidence: float = 0.0       # Normalized [0, 1] confidence of top explore
     clarify_reason: str = ""      # GAP 3: Why we're asking for clarification
     entities: list[dict[str, Any]] | None = None
@@ -254,6 +254,18 @@ def retrieve_with_graph_validation(
     for explore in explores:
         explore.confidence = round(min(explore.score / normalization_base, 1.0), 4)
 
+    # Step 5b: Extraction quality penalty — if LLM needed retries, reduce confidence.
+    # A flaky extraction is less trustworthy than a first-try success.
+    extraction_failures = raw_results.get("extraction_failures", 0)
+    if extraction_failures > 0:
+        extraction_penalty = 0.7 if extraction_failures == 1 else 0.5
+        for explore in explores:
+            explore.confidence = round(explore.confidence * extraction_penalty, 4)
+        logger.info(
+            "Extraction had %d failed attempt(s) — confidence penalized by %.0f%%",
+            extraction_failures, (1 - extraction_penalty) * 100,
+        )
+
     top_confidence = explores[0].confidence
     clarify_reason = ""
 
@@ -262,6 +274,13 @@ def retrieve_with_graph_validation(
         clarify_reason = "near_miss_ambiguous_explore"
         logger.info(
             "Near-miss detected — action=disambiguate (top two explores too close)"
+        )
+    elif extraction_failures >= 2:
+        action = "clarify"
+        clarify_reason = "extraction_unreliable"
+        logger.info(
+            "Extraction failed %d times — action=clarify (LLM response unreliable)",
+            extraction_failures,
         )
     else:
         action = "proceed"
