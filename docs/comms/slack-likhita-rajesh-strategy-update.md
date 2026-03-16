@@ -5,22 +5,32 @@
 
 ---
 
-Hey Likhita, Rajesh —
+Hey Likhita, Rajesh — quick strategy update and next steps.
 
-I built the full orchestration pipeline (`saheb/orchestrator-v1`) on top of your retrieval branch — SSE streaming, Looker MCP integration, multi-turn conversations, the works. Your entity extraction + vector search + graph validation structure held up well as the foundation.
+I built the full orchestration pipeline on top of your retrieval branch — SSE streaming, Looker MCP integration, multi-turn conversations, filter resolution, confidence scoring. Your entity extraction + vector search foundation held up well. Everything is running end-to-end on my local now.
 
-While wiring everything end-to-end, I stress-tested the retrieval layer against a 12-query golden set and identified a few things we need to tighten before merging to main. I wrote up a detailed file-by-file review here: `docs/pr-reviews/pr-likhita-rajesh-retrieval-cleanup.md` (on my branch — pull it or I can paste it).
+**What's happening in parallel:**
+- Ayush has the UI built — him and I are integrating it with the backend API this week
+- I'll push my orchestrator branch (cleanup + final fixes) by tomorrow
+- Your retrieval branch needs a few changes before merging to main (details below)
 
-The highlights:
-- Coverage scoring has a bug that makes all explores look equally good (quick fix)
-- Embedding calls need batching — 5 sequential API calls → 1 (saves ~800ms per query)
-- The pipeline needs to accept pre-extracted entities so the orchestrator doesn't double-call the LLM
-- `get_top_explore()` needs confidence scores + action routing (proceed / disambiguate / clarify)
+**For you two — two tracks:**
 
-**Merge plan:**
-1. You make changes on your branch → merge to `main`
-2. I rebase orchestrator on top → your work is the foundation in git history
+**Track 1: Merge your branch to main**
+I stress-tested retrieval against a 12-query golden set and wrote a file-by-file review: `docs/pr-reviews/pr-likhita-rajesh-retrieval-cleanup.md` (on `saheb/orchestrator-v1`). Key fixes:
+- Coverage scoring bug (always returns 1.0 — quick one-liner)
+- Batch embedding (5 API calls → 1, saves ~800ms/query)
+- Pre-extracted entity support so orchestrator doesn't double-call the LLM
+- Confidence + action routing in `get_top_explore()`
 
-One thing I want your input on, Likhita — the original additive scoring formula wasn't discriminating well between explores (~33% accuracy on the test set). I moved to a multiplicative formula that gets us to 83%. Want to walk through the math together and get your take on how this fits with intent classification long-term. Let's find 30 min this week.
+Once you merge, I rebase orchestrator on top — your work stays as the foundation in git history.
 
-PR review is detailed with code snippets — should be straightforward to work through. Flag me if anything's unclear.
+**Track 2: Get us on Hydra**
+Start working on deploying what we have to Hydra. We need the retrieval pipeline + API running there, not just local. Flag any infra blockers early — Docker config, SafeChain creds, pgvector access, networking.
+
+**Also — I need your eyes on gaps:**
+As you go through the pipeline and the Looker integration, keep a running list of what's missing or broken. Things like: fields we can't resolve, explores that don't score well, filter edge cases, LookML gaps. We're at 83% accuracy — I want to know what the remaining 17% looks like and what we need from the Looker side to close it.
+
+Likhita — want to find 30 min this week to walk through the scoring formula change? Went from additive to multiplicative, 33% → 83% accuracy. Want your take on how it fits with intent classification long-term.
+
+PR review has code snippets — should be straightforward. Flag me if anything's unclear.
