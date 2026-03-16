@@ -1,9 +1,10 @@
 """End-to-end pipeline test — run on corp machine, paste output back to Claude.
 
+Prerequisites:
+    python scripts/run_full_setup.py   (creates tables, loads embeddings)
+
 Usage:
     python -m scripts.test_pipeline_e2e
-
-Requires: pgvector + AGE Docker stack running, SafeChain/CIBIS access, .env configured.
 """
 
 from __future__ import annotations
@@ -13,12 +14,10 @@ import logging
 import sys
 import time
 import traceback
-from dataclasses import asdict
 
-# ── Setup ────────────────────────────────────────────────────────────
-
+# Suppress pipeline INFO noise — only show warnings/errors
 logging.basicConfig(
-    level=logging.WARNING,  # Suppress pipeline INFO noise
+    level=logging.WARNING,
     format="%(levelname)s %(name)s: %(message)s",
 )
 
@@ -58,11 +57,11 @@ TEST_CASES = [
         "Custins/cmdl measures + generation filter + digital filter",
     ),
 
-    # Stress tests — edge cases from the audit
+    # Stress tests — edge cases from the mathematical audit
     (
         "Show me customer count by card type",
         "finance_cardmember_360",
-        "EDGE: Both entities from shared views (custins + cmdl). Tests base_view_bonus discrimination.",
+        "EDGE: Both entities from shared views (custins + cmdl). Tests base_view_bonus.",
     ),
     (
         "What is the revolve index by generation?",
@@ -87,7 +86,7 @@ TEST_CASES = [
     (
         "Total billed business by generation",
         "finance_cardmember_360",
-        "EDGE: 'billed business' exists in custins (base) AND merchant (base). Tests P1 measure weighting.",
+        "EDGE: 'billed business' in custins (base) AND merchant (base). Tests P1 weighting.",
     ),
 ]
 
@@ -99,113 +98,54 @@ def run_tests():
     print("CORTEX PIPELINE E2E TEST")
     print("=" * 90)
 
-    # ── Step 0: Connectivity checks ──────────────────────────────────
-    print("\n[0/4] CONNECTIVITY CHECKS")
+    # ── Quick DB sanity check (no SafeChain, just table existence) ───
+    print("\n[1/4] DB SANITY CHECK")
     print("-" * 40)
-
-    # Check pgvector
     try:
         from src.connectors.postgres_age_client import get_engine
         from sqlalchemy import text
-
         engine = get_engine()
         with engine.connect() as conn:
-            row = conn.execute(text("SELECT count(*) FROM field_embeddings")).fetchone()
-            embedding_count = row[0]
-        print(f"  pgvector:    OK ({embedding_count} embeddings)")
+            emb_count = conn.execute(text("SELECT count(*) FROM field_embeddings")).fetchone()[0]
+            efi_count = conn.execute(text("SELECT count(*) FROM explore_field_index")).fetchone()[0]
+        print(f"  field_embeddings:   {emb_count} records")
+        print(f"  explore_field_index: {efi_count} rows")
+        if emb_count == 0:
+            print("\n  field_embeddings is EMPTY. Run: python scripts/run_full_setup.py")
+            sys.exit(1)
+        if efi_count == 0:
+            print("\n  explore_field_index is EMPTY. Run: python scripts/run_full_setup.py")
+            sys.exit(1)
     except Exception as e:
-        print(f"  pgvector:    FAIL — {e}")
-        print("\n  Cannot proceed without pgvector. Exiting.")
+        print(f"  DB check failed: {e}")
+        print("  Run: python scripts/run_full_setup.py")
         sys.exit(1)
 
-    # Check explore_field_index
-    try:
-        with engine.connect() as conn:
-            row = conn.execute(text("SELECT count(*) FROM explore_field_index")).fetchone()
-            field_index_count = row[0]
-        print(f"  field_index: OK ({field_index_count} rows)")
-    except Exception as e:
-        print(f"  field_index: FAIL — {e}")
-        field_index_count = 0
-
-    # Check SafeChain / LLM
-    try:
-        from src.adapters.model_adapter import get_model
-        from config.constants import LLM_MODEL_IDX, EMBED_MODEL_IDX
-
-        llm = get_model(LLM_MODEL_IDX)
-        test_response = llm.invoke("Reply with exactly: OK")
-        print(f"  SafeChain:   OK (LLM responded: {test_response[:20].strip()!r})")
-    except Exception as e:
-        print(f"  SafeChain:   FAIL — {e}")
-        print("\n  Cannot proceed without SafeChain. Exiting.")
-        sys.exit(1)
-
-    # Check embedding model
-    try:
-        emb = get_model(EMBED_MODEL_IDX)
-        test_emb = emb.embed_query("test")
-        print(f"  Embeddings:  OK (dim={len(test_emb)})")
-    except Exception as e:
-        print(f"  Embeddings:  FAIL — {e}")
-        print("\n  Cannot proceed without embeddings. Exiting.")
-        sys.exit(1)
-
-    # ── Step 1: Sample embeddings ────────────────────────────────────
-    print("\n[1/4] EMBEDDING SAMPLE (first 5 records)")
+    # ── Embedding data shape ─────────────────────────────────────────
+    print("\n[2/4] EMBEDDING DATA SHAPE")
     print("-" * 40)
     try:
         with engine.connect() as conn:
-            rows = conn.execute(text(
-                "SELECT field_key, field_name, field_type, explore_name, view_name "
-                "FROM field_embeddings ORDER BY id LIMIT 5"
-            )).fetchall()
-        for row in rows:
-            print(f"  {row[0]:<50} type={row[2]:<12} explore={row[3]:<35} view={row[4]}")
-
-        # Check explore_name format (comma-separated or single?)
-        with engine.connect() as conn:
-            row = conn.execute(text(
+            # explore_name format check
+            comma_row = conn.execute(text(
                 "SELECT explore_name FROM field_embeddings WHERE explore_name LIKE '%,%' LIMIT 1"
             )).fetchone()
-        if row:
-            print(f"\n  explore_name format: COMMA-SEPARATED (e.g., {row[0][:80]})")
-        else:
-            print(f"\n  explore_name format: SINGLE VALUE (one row per explore)")
+            fmt = f"COMMA-SEPARATED (e.g., {comma_row[0][:80]})" if comma_row else "SINGLE VALUE"
+            print(f"  explore_name format: {fmt}")
 
-        # Count per explore
-        with engine.connect() as conn:
+            # Count per explore
             rows = conn.execute(text(
                 "SELECT explore_name, count(*) as cnt "
                 "FROM field_embeddings GROUP BY explore_name ORDER BY cnt DESC"
             )).fetchall()
-        print("\n  Embeddings per explore_name:")
-        for row in rows:
-            print(f"    {row[0]:<60} {row[1]:>4} records")
-
+            print(f"\n  Embeddings per explore_name:")
+            for row in rows:
+                print(f"    {row[0]:<60} {row[1]:>4} records")
     except Exception as e:
-        print(f"  Error sampling embeddings: {e}")
+        print(f"  Error: {e}")
 
-    # ── Step 2: Entity extraction test ───────────────────────────────
-    print("\n[2/4] ENTITY EXTRACTION (raw LLM output)")
-    print("-" * 40)
-
-    from src.retrieval.vector import EntityExtractor
-    extractor = EntityExtractor()
-
-    for query, expected, desc in TEST_CASES[:3]:  # Just first 3 to save tokens
-        print(f"\n  Query: {query}")
-        try:
-            extracted = extractor.extract_entities(query)
-            print(f"    measures:   {extracted.measures}")
-            print(f"    dimensions: {extracted.dimensions}")
-            print(f"    time_range: {extracted.time_range}")
-            print(f"    filters:    {extracted.filters}")
-        except Exception as e:
-            print(f"    EXTRACTION FAILED: {e}")
-
-    # ── Step 3: Full pipeline runs ───────────────────────────────────
-    print("\n\n[3/4] FULL PIPELINE RUNS")
+    # ── Full pipeline runs ───────────────────────────────────────────
+    print(f"\n\n[3/4] FULL PIPELINE RUNS ({len(TEST_CASES)} queries)")
     print("=" * 90)
 
     from src.retrieval.pipeline import retrieve_with_graph_validation, get_top_explore
@@ -225,7 +165,6 @@ def run_tests():
 
             top_output = get_top_explore(pipeline_result)
 
-            # Result
             actual = top_output.get("top_explore_name", "NONE")
             passed = actual == expected
             action = top_output.get("action", "?")
@@ -251,12 +190,12 @@ def run_tests():
                     elif etype == "time_range":
                         print(f"    [     time] {ent.get('values', [])}")
 
-            # Scored explores (all, not just top)
+            # Scored explores
             if pipeline_result.explores:
                 print(f"\n  Explore scores ({len(pipeline_result.explores)} scored):")
-                for j, exp in enumerate(pipeline_result.explores[:5]):  # Top 5
+                for j, exp in enumerate(pipeline_result.explores[:5]):
                     marker = " <── WINNER" if j == 0 else ""
-                    marker += " ⚠ NEAR-MISS" if exp.is_near_miss else ""
+                    marker += " NEAR-MISS" if exp.is_near_miss else ""
                     base = f"(base: {exp.base_view_name})" if exp.base_view_name else "(no base view)"
                     print(
                         f"    #{j+1} {exp.name:<40} "
@@ -265,7 +204,6 @@ def run_tests():
                         f"{base}{marker}"
                     )
 
-                # Separation ratio
                 if len(pipeline_result.explores) >= 2:
                     top_s = pipeline_result.explores[0].score
                     run_s = pipeline_result.explores[1].score
@@ -285,7 +223,6 @@ def run_tests():
                 if rf.unresolved:
                     print(f"  UNRESOLVED filters: {rf.unresolved}")
 
-            # Clarify reason
             if pipeline_result.clarify_reason:
                 print(f"\n  Clarify reason: {pipeline_result.clarify_reason}")
 
@@ -313,27 +250,26 @@ def run_tests():
                 "error": str(e),
             })
 
-    # ── Step 4: Summary ──────────────────────────────────────────────
+    # ── Summary ──────────────────────────────────────────────────────
     print("\n\n" + "=" * 90)
     print("[4/4] SUMMARY")
     print("=" * 90)
 
-    passed = sum(1 for r in results if r["passed"])
+    passed_count = sum(1 for r in results if r["passed"])
     total = len(results)
-    accuracy = passed / total * 100 if total else 0
+    accuracy = passed_count / total * 100 if total else 0
 
-    print(f"\n  {passed}/{total} passed ({accuracy:.0f}%)\n")
-    print(f"  {'#':<4} {'Pass':<6} {'Confidence':<12} {'Time':<8} {'Expected':<40} {'Actual':<40}")
-    print(f"  {'─'*4} {'─'*5} {'─'*11} {'─'*7} {'─'*39} {'─'*39}")
+    print(f"\n  {passed_count}/{total} passed ({accuracy:.0f}%)\n")
+    print(f"  {'#':<4} {'Pass':<6} {'Conf':<8} {'Time':<7} {'Expected':<40} {'Actual':<40}")
+    print(f"  {'─'*4} {'─'*5} {'─'*7} {'─'*6} {'─'*39} {'─'*39}")
 
     for i, r in enumerate(results, 1):
         status = "OK" if r["passed"] else "FAIL"
         print(
-            f"  {i:<4} {status:<6} {r['confidence']:<12.4f} {r['elapsed_s']:<8.1f} "
+            f"  {i:<4} {status:<6} {r['confidence']:<8.4f} {r['elapsed_s']:<7.1f} "
             f"{r['expected']:<40} {r['actual']:<40}"
         )
 
-    # Failures detail
     failures = [r for r in results if not r["passed"]]
     if failures:
         print(f"\n  FAILURES ({len(failures)}):")
