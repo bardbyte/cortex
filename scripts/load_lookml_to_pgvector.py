@@ -202,12 +202,14 @@ class PostgresOperations:
             for record in records:
                 if record.embedding is None:
                     continue
+                # Convert embedding list to pgvector string format: [0.1,0.2,...]
+                embedding_str = "[" + ",".join(str(v) for v in record.embedding) + "]"
                 conn.exec_driver_sql(
                     SQL_UPSERT_FIELD_EMBEDDING_RECORD,
                     (
                         record.id,
                         record.field_key,
-                        record.embedding,
+                        embedding_str,
                         record.content,
                         record.field_name,
                         record.field_type,
@@ -229,10 +231,11 @@ class PostgresOperations:
 
     def retrieve_records(self, query_embed: list[float], k: int = 5):
         logger.info("Retrieving top %d records by vector distance", k)
+        embedding_str = "[" + ",".join(str(v) for v in query_embed) + "]"
         with self.get_engine().connect() as conn:
             results = conn.exec_driver_sql(
                 SQL_RETRIEVE_TOP_K_BY_DISTANCE,
-                (query_embed, k),
+                (embedding_str, k),
             ).fetchall()
         return results
 
