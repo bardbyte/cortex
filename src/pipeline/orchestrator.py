@@ -736,11 +736,16 @@ class CortexOrchestrator:
                 "conversation_id": ctx.conversation_id,
             })
 
-        except Exception as e:
+        except BaseException as e:
             logger.exception("Pipeline error for query: %s", query)
+            # ExceptionGroup (Python 3.11+) escapes `except Exception`.
+            # Catch BaseException so the SSE stream always closes cleanly.
+            error_msg = str(e)
+            if hasattr(e, 'exceptions'):  # ExceptionGroup
+                error_msg = "; ".join(str(sub) for sub in e.exceptions)
             yield SSEEvent("error", {
                 "step": "pipeline",
-                "message": str(e),
+                "message": error_msg,
                 "recoverable": False,
                 "trace_id": trace_id,
             })
@@ -748,7 +753,7 @@ class CortexOrchestrator:
                 "trace_id": trace_id,
                 "total_duration_ms": round((time.monotonic() - pipeline_start) * 1000),
                 "conversation_id": ctx.conversation_id,
-                "error": str(e),
+                "error": error_msg,
             })
 
     def get_trace(self, trace_id: str) -> PipelineTrace | None:
