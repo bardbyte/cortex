@@ -10,7 +10,6 @@ import type {
   DisambiguatePayload,
   ClarifyPayload,
   SqlGeneratedPayload,
-  ResultsPayload,
   FollowUpsPayload,
   DonePayload,
   PipelineAction,
@@ -20,11 +19,17 @@ import type {
 
 // ---------- Pipeline state exposed to UI ----------
 
+export interface PipelineResults {
+  columns: string[];
+  rows: Record<string, unknown>[];
+  rowCount: number;
+  truncated: boolean;
+}
+
 export interface PipelineState {
   steps: PipelineStep[];
   explores: ExploreScoredPayload | null;
   sql: SqlGeneratedPayload | null;
-  results: ResultsPayload | null;
   followUps: string[];
   disambiguate: DisambiguatePayload | null;
   clarify: ClarifyPayload | null;
@@ -41,6 +46,7 @@ export interface PipelineState {
     filters: string[];
     time_range: string | null;
   } | null;
+  results: PipelineResults | null;
 }
 
 function initialSteps(): PipelineStep[] {
@@ -56,7 +62,6 @@ function initialPipelineState(): PipelineState {
     steps: initialSteps(),
     explores: null,
     sql: null,
-    results: null,
     followUps: [],
     disambiguate: null,
     clarify: null,
@@ -64,6 +69,7 @@ function initialPipelineState(): PipelineState {
     action: null,
     filters: { resolved: [], mandatory: [] },
     entities: null,
+    results: null,
   };
 }
 
@@ -169,7 +175,16 @@ export function useSSE({ apiUrl }: UseSSEOptions): UseSSEReturn {
         }
         case 'disambiguate': {
           const d = payload as unknown as DisambiguatePayload;
-          setPipelineState((prev) => ({ ...prev, disambiguate: d, action: 'disambiguate' }));
+          // Normalize confidence: backend sends 0.0-1.0, UI expects 0-100
+          const normalizedOptions = d.options.map((opt) => ({
+            ...opt,
+            confidence: opt.confidence <= 1 ? Math.round(opt.confidence * 100) : opt.confidence,
+          }));
+          setPipelineState((prev) => ({
+            ...prev,
+            disambiguate: { ...d, options: normalizedOptions },
+            action: 'disambiguate',
+          }));
           break;
         }
         case 'clarify': {
@@ -182,22 +197,35 @@ export function useSSE({ apiUrl }: UseSSEOptions): UseSSEReturn {
           setPipelineState((prev) => ({ ...prev, sql: d }));
           break;
         }
-        case 'results': {
-          const d = payload as unknown as ResultsPayload;
-          setPipelineState((prev) => ({ ...prev, results: d }));
-          break;
-        }
         case 'follow_ups': {
           const d = payload as unknown as FollowUpsPayload;
           setPipelineState((prev) => ({ ...prev, followUps: d.suggestions }));
           break;
         }
         case 'filter_resolved': {
-          const resolved = (payload.resolved ?? []) as ResolvedFilter[];
+          const rawResolved = (payload.resolved ?? []) as ResolvedFilter[];
           const mandatory = (payload.mandatory ?? []) as MandatoryFilter[];
+          // Normalize confidence: backend sends 0.0-1.0, UI expects 0-100
+          const resolved = rawResolved.map((f) => ({
+            ...f,
+            confidence: f.confidence <= 1 ? Math.round(f.confidence * 100) : f.confidence,
+          }));
           setPipelineState((prev) => ({
             ...prev,
             filters: { resolved, mandatory },
+          }));
+          break;
+        }
+        case 'results': {
+          // Backend sends columns as {name, type, label}[] or string[]
+          const rawCols = (payload.columns ?? []) as Array<string | { name: string; type?: string; label?: string }>;
+          const columns = rawCols.map((c) => (typeof c === 'string' ? c : c.name));
+          const rows = (payload.rows ?? []) as Record<string, unknown>[];
+          const rowCount = (payload.row_count ?? rows.length) as number;
+          const truncated = (payload.truncated ?? false) as boolean;
+          setPipelineState((prev) => ({
+            ...prev,
+            results: { columns, rows, rowCount, truncated },
           }));
           break;
         }
@@ -323,6 +351,11 @@ export function useSSE({ apiUrl }: UseSSEOptions): UseSSEReturn {
             }
           }
         }
+
+        // Safety net: if stream ended without a done/error event, stop processing.
+        // The done handler already calls setIsProcessing(false), so this is idempotent
+        // for successful pipelines but critical for dropped connections.
+        setIsProcessing(false);
       } catch (err: unknown) {
         if ((err as DOMException)?.name === 'AbortError') {
           // User-initiated abort — not an error.

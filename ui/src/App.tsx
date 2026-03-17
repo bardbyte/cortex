@@ -18,7 +18,7 @@ function generateId(): string {
 }
 
 function buildAssistantMessage(pipeline: PipelineState): Message {
-  const { done, sql, results, followUps, action, disambiguate, clarify, filters, entities } =
+  const { done, sql, followUps, action, disambiguate, clarify, filters, entities } =
     pipeline;
 
   // Derive content based on action
@@ -28,13 +28,17 @@ function buildAssistantMessage(pipeline: PipelineState): Message {
   } else if (action === 'clarify' && clarify) {
     content = clarify.message || 'Could you clarify your question?';
   } else if (action === 'no_match') {
-    content = 'I could not find a matching data source for your query. Could you rephrase or try a different question?';
+    content = 'I couldn\'t find a matching data source for that question. Try rephrasing with a specific metric, time range, or dimension.';
   } else if (action === 'out_of_scope') {
-    content = 'This question is outside the scope of available data sources. Please ask a question about finance data.';
+    content = 'That question is outside the data sources I can access. Try asking about a specific metric or dataset available in your business unit.';
   } else if (done?.error) {
-    content = `An error occurred: ${done.error}`;
-  } else if (results) {
-    content = `Found ${results.row_count} result${results.row_count !== 1 ? 's' : ''}.`;
+    content = 'Something went wrong processing that query. Try simplifying — for example, add a specific time range or segment.';
+  } else if (pipeline.steps.some(s => s.status === 'error')) {
+    content = 'Something went wrong processing that query. Try simplifying — for example, add a specific time range or segment.';
+  } else if (sql) {
+    content = sql.explore
+      ? `Here's what I found in ${sql.explore}.`
+      : 'Here are your results.';
   } else {
     content = 'Query completed.';
   }
@@ -44,9 +48,9 @@ function buildAssistantMessage(pipeline: PipelineState): Message {
     role: 'assistant',
     content,
     timestamp: new Date(),
-    results: results ?? undefined,
     sql: sql?.sql,
     explore: sql?.explore,
+    model: sql?.model,
     confidence: done?.overall_confidence != null
       ? Math.round((done.overall_confidence as number) * 100)
       : undefined,
@@ -61,12 +65,13 @@ function buildAssistantMessage(pipeline: PipelineState): Message {
       ? { resolved: filters.resolved, mandatory: filters.mandatory }
       : undefined,
     entities: entities ?? undefined,
+    results: pipeline.results ?? undefined,
   };
 }
 
 export default function App() {
   const [viewMode, setViewMode] = useState<ViewMode>('analyst');
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const {
     sessions,
@@ -75,9 +80,10 @@ export default function App() {
     setActiveSessionId,
     addMessage,
     getActiveSession,
+    setConversationId,
   } = useConversation();
 
-  const { sendQuery, pipelineState, isProcessing, error: _sseError, reset } = useSSE({
+  const { sendQuery, pipelineState, isProcessing, error: sseError, reset } = useSSE({
     apiUrl: API_URL,
   });
 
@@ -93,10 +99,15 @@ export default function App() {
       if (activeSessionId) {
         const assistantMsg = buildAssistantMessage(pipelineState);
         addMessage(activeSessionId, assistantMsg);
+
+        // Store backend conversation_id for multi-turn context
+        if (pipelineState.done?.conversation_id) {
+          setConversationId(activeSessionId, pipelineState.done.conversation_id);
+        }
       }
     }
     prevIsProcessingRef.current = isProcessing;
-  }, [isProcessing, pipelineState, activeSessionId, addMessage]);
+  }, [isProcessing, pipelineState, activeSessionId, addMessage, setConversationId]);
 
   const handleSendQuery = useCallback(
     (content: string) => {
@@ -121,10 +132,11 @@ export default function App() {
       // Mark that we're waiting for a result
       pendingQueryRef.current = true;
 
-      // Fire SSE query
-      sendQuery(content, sessionId);
+      // Send backend conversation_id for multi-turn context (if available)
+      const session = sessions.find((s) => s.id === sessionId);
+      sendQuery(content, session?.conversationId ?? sessionId);
     },
-    [activeSessionId, createSession, addMessage, sendQuery, reset],
+    [activeSessionId, sessions, createSession, addMessage, sendQuery, reset],
   );
 
   const handleNewSession = useCallback(() => {
@@ -148,6 +160,9 @@ export default function App() {
     ? (pipelineState.done.overall_confidence as number)
     : 0;
   const totalDurationMs = pipelineState.done?.total_duration_ms ?? 0;
+
+  // Derive activeStepLabel from pipeline state
+  const activeStepLabel = pipelineState.steps.find((s) => s.status === 'active')?.label;
 
   // Layout styles
   const appContainerStyle: CSSProperties = {
@@ -173,16 +188,19 @@ export default function App() {
     overflow: 'hidden',
   };
 
+  const isEngineering = viewMode === 'engineering';
+
   const chatPanelContainerStyle: CSSProperties = {
-    flex: viewMode === 'engineering' ? '0 0 55%' : '1 1 auto',
+    flex: isEngineering ? '0 0 55%' : '1 1 auto',
     overflow: 'hidden',
     transition: 'flex 250ms ease-out',
   };
 
   const engineeringPanelContainerStyle: CSSProperties = {
-    flex: '0 0 45%',
+    flex: isEngineering ? '0 0 45%' : '0 0 0%',
     overflow: 'hidden',
-    display: viewMode === 'engineering' ? 'flex' : 'none',
+    display: 'flex',
+    transition: 'flex 250ms ease-out',
   };
 
   return (
@@ -210,19 +228,27 @@ export default function App() {
               onSendQuery={handleSendQuery}
               isProcessing={isProcessing}
               viewMode={viewMode}
+              activeStepLabel={activeStepLabel}
+              entities={pipelineState.entities ?? undefined}
+              filters={
+                pipelineState.filters.resolved.length > 0 || pipelineState.filters.mandatory.length > 0
+                  ? pipelineState.filters
+                  : undefined
+              }
+              exploreName={pipelineState.sql?.explore}
+              steps={pipelineState.steps}
+              error={sseError}
             />
           </div>
 
-          {viewMode === 'engineering' && (
-            <div style={engineeringPanelContainerStyle}>
-              <EngineeringPanel
-                steps={pipelineState.steps}
-                overallConfidence={overallConfidence}
-                totalDurationMs={totalDurationMs}
-                isProcessing={isProcessing}
-              />
-            </div>
-          )}
+          <div style={engineeringPanelContainerStyle}>
+            <EngineeringPanel
+              steps={pipelineState.steps}
+              overallConfidence={overallConfidence}
+              totalDurationMs={totalDurationMs}
+              isProcessing={isProcessing}
+            />
+          </div>
         </div>
       </div>
     </div>

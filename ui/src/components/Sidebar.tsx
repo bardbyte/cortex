@@ -51,6 +51,15 @@ function groupSessions(
     .map((g) => ({ group: g, items: map.get(g)! }));
 }
 
+function truncatePreview(text: string, max: number): string {
+  if (text.length <= max) return text;
+  return text.slice(0, max) + '...';
+}
+
+function formatMessageCount(count: number): string {
+  return count === 1 ? '1 msg' : `${count} msgs`;
+}
+
 export default function Sidebar({
   sessions,
   activeSessionId,
@@ -145,11 +154,38 @@ export default function Sidebar({
     lineHeight: '1.4',
   });
 
+  const sessionPreviewStyle: CSSProperties = {
+    fontSize: '11px',
+    color: colors.textTertiary,
+    fontFamily: typography.fontPrimary,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    lineHeight: '1.3',
+  };
+
+  const sessionMetaRowStyle: CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+  };
+
   const sessionTimestampStyle: CSSProperties = {
     fontSize: '11px',
     color: colors.textTertiary,
     fontFamily: typography.fontPrimary,
     lineHeight: '1.3',
+  };
+
+  const messageCountBadgeStyle: CSSProperties = {
+    fontSize: '11px',
+    color: colors.textTertiary,
+    fontFamily: typography.fontPrimary,
+    backgroundColor: colors.surfaceTertiary,
+    borderRadius: radius.full,
+    padding: '1px 6px',
+    lineHeight: '1.4',
+    whiteSpace: 'nowrap',
   };
 
   return (
@@ -187,8 +223,16 @@ export default function Sidebar({
                 return (
                   <div
                     key={session.id}
+                    role="button"
+                    tabIndex={0}
                     style={getSessionItemStyle(isActive)}
                     onClick={() => onSelectSession(session.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        onSelectSession(session.id);
+                      }
+                    }}
                     onMouseEnter={(e) => {
                       if (!isActive) {
                         (e.currentTarget as HTMLDivElement).style.background =
@@ -202,7 +246,17 @@ export default function Sidebar({
                     }}
                   >
                     <span style={sessionTitleStyle(isActive)}>{displayTitle}</span>
-                    <span style={sessionTimestampStyle}>{formatTime(session.timestamp)}</span>
+                    {session.lastMessage && session.lastMessage.length > 0 && (
+                      <span style={sessionPreviewStyle}>
+                        {truncatePreview(session.lastMessage, 45)}
+                      </span>
+                    )}
+                    <div style={sessionMetaRowStyle}>
+                      <span style={sessionTimestampStyle}>{formatTime(session.timestamp)}</span>
+                      <span style={messageCountBadgeStyle}>
+                        {formatMessageCount(session.messages.length)}
+                      </span>
+                    </div>
                   </div>
                 );
               })}
@@ -221,7 +275,7 @@ export default function Sidebar({
             >
               No conversations yet.
               <br />
-              Start a new one above.
+              Ask a question to get started.
             </div>
           )}
         </div>

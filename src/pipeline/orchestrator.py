@@ -271,6 +271,7 @@ class CortexOrchestrator:
                     "message": "This question is outside what I can answer with your Finance data.",
                     "total_duration_ms": round(trace.total_duration_ms),
                     "conversation_id": ctx.conversation_id,
+                    "action": "out_of_scope",
                 })
                 return
 
@@ -285,6 +286,15 @@ class CortexOrchestrator:
                 time_range=entities_data.get("time_range"),
                 filters=entities_data.get("filters", []),
             )
+
+            # Emit extracted entities so the frontend can show entity chips
+            yield SSEEvent("entities_extracted", {
+                "intent": classification.get("intent", ""),
+                "metrics": entities_data.get("metrics", []),
+                "dimensions": entities_data.get("dimensions", []),
+                "filters": entities_data.get("filters", []),
+                "time_range": entities_data.get("time_range"),
+            })
 
             # Step 2: Retrieval (embedding + pgvector + graph scoring)
             step2_start = time.monotonic()
@@ -345,16 +355,25 @@ class CortexOrchestrator:
                 trace.action = pipeline_result.action
                 trace.total_duration_ms = (time.monotonic() - pipeline_start) * 1000
                 self._trace_store[trace_id] = trace
-                yield SSEEvent("clarify", {
-                    "step": "retrieval",
-                    "message": "I couldn't find matching data fields. Could you rephrase your question?",
-                    "reason": pipeline_result.clarify_reason,
-                })
-                yield SSEEvent("done", {
-                    "trace_id": trace_id,
-                    "total_duration_ms": round(trace.total_duration_ms),
-                    "conversation_id": ctx.conversation_id,
-                })
+                if pipeline_result.action == "no_match":
+                    yield SSEEvent("done", {
+                        "trace_id": trace_id,
+                        "total_duration_ms": round(trace.total_duration_ms),
+                        "conversation_id": ctx.conversation_id,
+                        "action": "no_match",
+                    })
+                else:
+                    yield SSEEvent("clarify", {
+                        "step": "retrieval",
+                        "message": "I couldn't find matching data fields. Could you rephrase your question?",
+                        "reason": pipeline_result.clarify_reason,
+                    })
+                    yield SSEEvent("done", {
+                        "trace_id": trace_id,
+                        "total_duration_ms": round(trace.total_duration_ms),
+                        "conversation_id": ctx.conversation_id,
+                        "action": "clarify",
+                    })
                 return
 
             # Step 3: Explore Scoring (already computed in retrieval — emit results)
@@ -488,6 +507,31 @@ class CortexOrchestrator:
                 "duration_ms": round(step4_duration),
                 "message": f"Resolved {len(filters_data)} filters",
                 "detail": filter_detail,
+            })
+
+            # Emit filter_resolved so the frontend can show filter translation UI
+            _PASS_NAMES = {1: "exact", 2: "synonym", 3: "fuzzy", 4: "semantic", 5: "llm"}
+            resolved_for_ui = [
+                {
+                    "field": f.field_name,
+                    "user_said": f.original_value,
+                    "resolved_to": f.value,
+                    "confidence": f.confidence,
+                    "pass": _PASS_NAMES.get(f.resolution_pass, "exact"),
+                }
+                for f in (pipeline_result.filters.resolved_filters if pipeline_result.filters else [])
+            ]
+            mandatory_for_ui = [
+                {
+                    "field": f.field_name,
+                    "value": f.value,
+                    "reason": "auto_injected_partition" if f.resolution_pass == 0 else "user",
+                }
+                for f in (pipeline_result.filters.mandatory_filters if pipeline_result.filters else [])
+            ]
+            yield SSEEvent("filter_resolved", {
+                "resolved": resolved_for_ui,
+                "mandatory": mandatory_for_ui,
             })
 
             # Save retrieval context for follow-ups

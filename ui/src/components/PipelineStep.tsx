@@ -204,7 +204,7 @@ function renderIntentClassification(detail: Record<string, unknown>): React.Reac
         {measures.map((m) => chip(m, colors.successLight, colors.success))}
         {dimensions.map((d) => chip(d, colors.infoLight, colors.amexBlue))}
         {filters.map((f) => chip(f, colors.warningLight, colors.warning))}
-        {timeRange && chip(timeRange, '#F3E8FF', '#7C3AED')}
+        {timeRange && chip(timeRange, colors.filterSynonymLight, colors.filterSynonym)}
       </div>
     </div>
   );
@@ -244,7 +244,7 @@ function renderExploreScoring(detail: Record<string, unknown>): React.ReactNode 
                   style={{
                     textAlign: 'left',
                     fontWeight: 600,
-                    fontSize: 10,
+                    fontSize: 11,
                     textTransform: 'uppercase',
                     letterSpacing: '0.05em',
                     color: colors.textTertiary,
@@ -294,7 +294,7 @@ function renderExploreScoring(detail: Record<string, unknown>): React.ReactNode 
                     {isWinner && (
                       <span
                         style={{
-                          fontSize: 10,
+                          fontSize: 11,
                           fontWeight: 600,
                           padding: '1px 6px',
                           borderRadius: radius.full,
@@ -308,7 +308,7 @@ function renderExploreScoring(detail: Record<string, unknown>): React.ReactNode 
                     {isNearMiss && (
                       <span
                         style={{
-                          fontSize: 10,
+                          fontSize: 11,
                           fontWeight: 600,
                           padding: '1px 6px',
                           borderRadius: radius.full,
@@ -316,7 +316,7 @@ function renderExploreScoring(detail: Record<string, unknown>): React.ReactNode 
                           color: colors.warning,
                         }}
                       >
-                        NEAR MISS
+                        CLOSE MATCH
                       </span>
                     )}
                   </td>
@@ -349,7 +349,7 @@ function renderFilterResolution(detail: Record<string, unknown>): React.ReactNod
   const passBadgeColor: Record<string, { bg: string; fg: string }> = {
     exact: { bg: colors.successLight, fg: colors.success },
     fuzzy: { bg: colors.infoLight, fg: colors.amexBlue },
-    synonym: { bg: '#F3E8FF', fg: '#7C3AED' },
+    synonym: { bg: colors.filterSynonymLight, fg: colors.filterSynonym },
     semantic: { bg: colors.warningLight, fg: colors.warning },
   };
 
@@ -388,7 +388,7 @@ function renderFilterResolution(detail: Record<string, unknown>): React.ReactNod
             </span>
             <span
               style={{
-                fontSize: 10,
+                fontSize: 11,
                 fontWeight: 600,
                 padding: '1px 5px',
                 borderRadius: radius.full,
@@ -416,7 +416,7 @@ function renderFilterResolution(detail: Record<string, unknown>): React.ReactNod
           </span>
           <span
             style={{
-              fontSize: 10,
+              fontSize: 11,
               fontWeight: 600,
               padding: '1px 5px',
               borderRadius: radius.full,
@@ -425,7 +425,7 @@ function renderFilterResolution(detail: Record<string, unknown>): React.ReactNod
               textTransform: 'uppercase',
             }}
           >
-            auto-injected
+            required
           </span>
         </div>
       ))}
@@ -442,7 +442,7 @@ function renderFilterResolution(detail: Record<string, unknown>): React.ReactNod
           </span>
           <span
             style={{
-              fontSize: 10,
+              fontSize: 11,
               fontWeight: 600,
               padding: '1px 5px',
               borderRadius: radius.full,
@@ -476,7 +476,7 @@ function renderSqlGeneration(detail: Record<string, unknown>): React.ReactNode {
             margin: 0,
             padding: '12px 14px',
             paddingRight: 60,
-            backgroundColor: colors.amexDarkBlue,
+            backgroundColor: colors.codeSurface,
             color: '#E2E8F0',
             fontFamily: typography.fontMono,
             fontSize: 11,
@@ -496,7 +496,7 @@ function renderSqlGeneration(detail: Record<string, unknown>): React.ReactNode {
             top: 6,
             right: 6,
             padding: '3px 8px',
-            fontSize: 10,
+            fontSize: 11,
             fontWeight: 500,
             fontFamily: typography.fontPrimary,
             backgroundColor: 'rgba(255,255,255,0.12)',
@@ -520,66 +520,6 @@ function renderSqlGeneration(detail: Record<string, unknown>): React.ReactNode {
   );
 }
 
-function renderResultsProcessing(detail: Record<string, unknown>): React.ReactNode {
-  const rowCount = (detail.row_count as number) || 0;
-  const truncated = (detail.truncated as boolean) || false;
-  const totalRows = (detail.total_rows as number) || rowCount;
-
-  return (
-    <div style={{ fontSize: 12, color: colors.textSecondary }}>
-      {truncated ? (
-        <span>
-          <span style={{ fontWeight: 600, color: colors.textPrimary }}>{rowCount}</span> rows
-          <span style={{ color: colors.warning }}> (truncated from {totalRows})</span>
-        </span>
-      ) : (
-        <span>
-          <span style={{ fontWeight: 600, color: colors.textPrimary }}>{rowCount}</span> rows returned
-        </span>
-      )}
-    </div>
-  );
-}
-
-function renderResponseFormatting(detail: Record<string, unknown>): React.ReactNode {
-  const answer = (detail.answer as string) || (detail.response as string) || '';
-  const followUps = (detail.follow_ups as string[]) || (detail.suggestions as string[]) || [];
-
-  const truncatedAnswer = answer.length > 100 ? answer.slice(0, 100) + '...' : answer;
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      {truncatedAnswer && (
-        <div
-          style={{
-            fontSize: 12,
-            color: colors.textPrimary,
-            padding: '6px 10px',
-            backgroundColor: colors.surfaceSecondary,
-            borderRadius: radius.sm,
-            borderLeft: `2px solid ${colors.amexBlue}`,
-            lineHeight: 1.4,
-          }}
-        >
-          {truncatedAnswer}
-        </div>
-      )}
-      {followUps.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 2 }}>
-          <span style={{ fontSize: 10, fontWeight: 600, color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-            Follow-ups
-          </span>
-          {followUps.map((f, i) => (
-            <span key={i} style={{ fontSize: 11, color: colors.textSecondary, paddingLeft: 8 }}>
-              {'\u2022'} {f}
-            </span>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 /* ------------------------------------------------------------------ */
 /*  Detail router                                                      */
 /* ------------------------------------------------------------------ */
@@ -592,8 +532,6 @@ function renderDetail(step: PipelineStepType): React.ReactNode {
     case 'explore_scoring': return renderExploreScoring(step.detail);
     case 'filter_resolution': return renderFilterResolution(step.detail);
     case 'sql_generation': return renderSqlGeneration(step.detail);
-    case 'results_processing': return renderResultsProcessing(step.detail);
-    case 'response_formatting': return renderResponseFormatting(step.detail);
     default: return null;
   }
 }

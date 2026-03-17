@@ -47,7 +47,7 @@ const DisambiguationModal: React.FC<DisambiguationModalProps> = ({ options, onSe
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: 'rgba(0, 23, 90, 0.4)',
+        backgroundColor: colors.backdrop,
         backdropFilter: 'blur(4px)',
         WebkitBackdropFilter: 'blur(4px)',
       }}
@@ -112,7 +112,6 @@ const DisambiguationModal: React.FC<DisambiguationModalProps> = ({ options, onSe
                   textAlign: 'left',
                   fontFamily: typography.fontPrimary,
                   transition: 'all 0.15s ease',
-                  outline: 'none',
                 }}
               >
                 <div style={{ flex: 1, minWidth: 0 }}>

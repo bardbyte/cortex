@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import type { CSSProperties } from 'react';
 import type { ViewMode } from '../types';
 import { colors, typography, radius } from '../tokens';
+import RadixMark from './RadixMark';
+import { useTheme } from '../hooks/useTheme';
 
 interface TopNavProps {
   viewMode: ViewMode;
@@ -18,6 +20,8 @@ export default function TopNav({
   sidebarOpen,
   onToggleSidebar,
 }: TopNavProps) {
+  const { theme, toggle } = useTheme();
+
   // Track the active pill position for the sliding animation
   const segmentedRef = useRef<HTMLDivElement>(null);
   const analystRef = useRef<HTMLButtonElement>(null);
@@ -85,22 +89,6 @@ export default function TopNav({
     transition: 'transform 200ms ease',
   };
 
-  const logoCircleStyle: CSSProperties = {
-    width: '40px',
-    height: '40px',
-    borderRadius: '50%',
-    background: colors.amexBlue,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    color: colors.amexWhite,
-    fontSize: '16px',
-    fontWeight: 700,
-    fontFamily: typography.fontPrimary,
-    letterSpacing: '0.5px',
-    flexShrink: 0,
-  };
-
   const separatorStyle: CSSProperties = {
     width: '1px',
     height: '28px',
@@ -114,15 +102,16 @@ export default function TopNav({
 
   const wordmarkStyle: CSSProperties = {
     fontSize: '18px',
-    fontWeight: 600,
+    fontWeight: 700,
     color: colors.amexWhite,
     lineHeight: '1.2',
     fontFamily: typography.fontPrimary,
+    letterSpacing: '0.5px',
   };
 
   const subtitleStyle: CSSProperties = {
     fontSize: '11px',
-    color: 'rgba(255,255,255,0.55)',
+    color: 'rgba(255,255,255,0.70)',
     lineHeight: '1.2',
     fontFamily: typography.fontPrimary,
     marginTop: '1px',
@@ -224,11 +213,11 @@ export default function TopNav({
           <span style={hamburgerLineStyle} />
           <span style={hamburgerLineStyle} />
         </button>
-        <div style={logoCircleStyle}>AX</div>
+        <RadixMark size={36} />
         <div style={separatorStyle} />
         <div style={brandTextStyle}>
-          <span style={wordmarkStyle}>Cortex</span>
-          <span style={subtitleStyle}>Finance Intelligence</span>
+          <span style={wordmarkStyle}>Radix</span>
+          <span style={subtitleStyle}>Data Intelligence</span>
         </div>
       </div>
 
@@ -241,24 +230,57 @@ export default function TopNav({
           style={viewMode === 'analyst' ? activeSegmentText : inactiveSegmentText}
           onClick={() => onViewModeChange('analyst')}
         >
-          Analyst
+          Chat
         </button>
         <button
           ref={engineeringRef}
           style={viewMode === 'engineering' ? activeSegmentText : inactiveSegmentText}
           onClick={() => onViewModeChange('engineering')}
         >
-          Engineering
+          Pipeline
         </button>
       </div>
 
       {/* Right: User */}
       <div style={rightSectionStyle}>
+        <button
+          onClick={toggle}
+          aria-label={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
+          style={{
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            padding: '8px',
+            borderRadius: radius.sm,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'rgba(255,255,255,0.70)',
+            transition: 'color 150ms ease',
+          }}
+          onMouseEnter={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.color = '#FFFFFF';
+          }}
+          onMouseLeave={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.color = 'rgba(255,255,255,0.70)';
+          }}
+        >
+          {theme === 'light' ? (
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+              <path d="M15.5 9.78A7 7 0 118.22 2.5 5.5 5.5 0 0015.5 9.78z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          ) : (
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+              <circle cx="9" cy="9" r="3.5" stroke="currentColor" strokeWidth="1.5" />
+              <path d="M9 1.5V3M9 15V16.5M1.5 9H3M15 9H16.5M3.4 3.4L4.5 4.5M13.5 13.5L14.6 14.6M3.4 14.6L4.5 13.5M13.5 4.5L14.6 3.4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+          )}
+        </button>
         <div style={userInfoStyle}>
-          <span style={userNameStyle}>Finance Analyst</span>
-          <span style={buBadgeStyle}>Finance BU</span>
+          <span style={userNameStyle}>Saheb Singh</span>
+          <span style={buBadgeStyle}>Enterprise</span>
         </div>
-        <div style={avatarStyle}>F</div>
+        <div style={avatarStyle}>SS</div>
       </div>
     </nav>
   );

@@ -1,22 +1,33 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { colors, typography, radius, shadows } from '../tokens';
-import type { Message, ViewMode } from '../types';
+import type { Message, ViewMode, PipelineStep } from '../types';
 import AssistantResponse from './AssistantResponse';
+import IntentEcho from './IntentEcho';
+import ProcessingIndicator from './ProcessingIndicator';
 
 interface ChatPanelProps {
   messages: Message[];
   onSendQuery: (query: string) => void;
   isProcessing: boolean;
   viewMode: ViewMode;
+  // NEW: pipeline state for live processing display
+  activeStepLabel?: string;
+  entities?: Message['entities'];
+  filters?: Message['filters'];
+  exploreName?: string;
+  steps?: PipelineStep[];
+  error?: string | null;
 }
 
 /* ── Starter questions ────────────────────────────────── */
-const STARTER_QUESTIONS = [
-  'Total billed business by generation',
-  'Top 5 merchants by card spend',
-  'Customer attrition rate by tenure',
-  'Card product issuance volume this quarter',
-  'Dining spend by customer segment',
+const API_URL = 'http://localhost:8080';
+
+const FALLBACK_STARTER_QUESTIONS = [
+  'Total billed business by customer segment',
+  'Top 5 merchants by card spend this quarter',
+  'Active cardmembers by generation',
+  'Card issuance volume year over year',
+  'Average spend per customer by product type',
 ];
 
 /* ── Time-based greeting ──────────────────────────────── */
@@ -41,7 +52,18 @@ const SendIcon: React.FC<{ color: string }> = ({ color }) => (
 );
 
 /* ── ChatPanel ────────────────────────────────────────── */
-const ChatPanel: React.FC<ChatPanelProps> = ({ messages, onSendQuery, isProcessing, viewMode }) => {
+const ChatPanel: React.FC<ChatPanelProps> = ({
+  messages,
+  onSendQuery,
+  isProcessing,
+  viewMode,
+  activeStepLabel,
+  entities,
+  filters,
+  exploreName,
+  steps,
+  error,
+}) => {
   const maxWidth = viewMode === 'analyst' ? 800 : 680;
   const hasMessages = messages.length > 0;
 
@@ -56,28 +78,40 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ messages, onSendQuery, isProcessi
         overflow: 'hidden',
       }}
     >
-      {/* Content area */}
-      <div
-        style={{
-          flex: 1,
-          overflow: 'hidden',
-          display: 'flex',
-          flexDirection: 'column',
-        }}
-      >
-        {hasMessages ? (
-          <MessageThread messages={messages} onFollowUp={onSendQuery} maxWidth={maxWidth} />
-        ) : (
-          <WelcomeState onSendQuery={onSendQuery} maxWidth={maxWidth} />
-        )}
-      </div>
-
-      {/* Sticky bottom: ChatInput */}
-      <ChatInput
-        onSendQuery={onSendQuery}
-        isProcessing={isProcessing}
-        maxWidth={maxWidth}
-      />
+      {hasMessages ? (
+        <>
+          {/* Conversation mode: messages + bottom-anchored input */}
+          <div
+            style={{
+              flex: 1,
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+          >
+            <MessageThread
+              messages={messages}
+              onFollowUp={onSendQuery}
+              maxWidth={maxWidth}
+              isProcessing={isProcessing}
+              activeStepLabel={activeStepLabel}
+              entities={entities}
+              filters={filters}
+              exploreName={exploreName}
+              steps={steps}
+              error={error}
+            />
+          </div>
+          <ChatInput
+            onSendQuery={onSendQuery}
+            isProcessing={isProcessing}
+            maxWidth={maxWidth}
+          />
+        </>
+      ) : (
+        /* Welcome mode: centered input with starters — no bottom bar */
+        <WelcomeState onSendQuery={onSendQuery} maxWidth={maxWidth} />
+      )}
     </div>
   );
 };
@@ -87,6 +121,60 @@ const WelcomeState: React.FC<{ onSendQuery: (q: string) => void; maxWidth: numbe
   onSendQuery,
   maxWidth,
 }) => {
+  const [value, setValue] = useState('');
+  const [focused, setFocused] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [starterQuestions, setStarterQuestions] = useState<string[]>(FALLBACK_STARTER_QUESTIONS);
+
+  // Fetch dynamic starter questions from capabilities endpoint
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${API_URL}/api/v1/capabilities`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (cancelled) return;
+        const questions = data?.starter_questions;
+        if (Array.isArray(questions) && questions.length > 0) {
+          setStarterQuestions(questions.map((q: { text: string }) => q.text));
+        }
+      })
+      .catch(() => {
+        // Silently fall back to hardcoded questions
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  const canSend = value.trim().length > 0;
+
+  const handleSend = useCallback(() => {
+    const trimmed = value.trim();
+    if (!trimmed) return;
+    onSendQuery(trimmed);
+    setValue('');
+  }, [value, onSendQuery]);
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        handleSend();
+      }
+    },
+    [handleSend],
+  );
+
+  const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setValue(e.target.value);
+    const el = e.target;
+    el.style.height = '52px';
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  }, []);
+
+  const handlePrefill = useCallback((q: string) => {
+    setValue(q);
+    setTimeout(() => textareaRef.current?.focus(), 0);
+  }, []);
+
   return (
     <div
       style={{
@@ -95,9 +183,7 @@ const WelcomeState: React.FC<{ onSendQuery: (q: string) => void; maxWidth: numbe
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: '40px 24px',
-        maxWidth,
-        margin: '0 auto',
+        padding: '0 24px 60px',
         width: '100%',
         boxSizing: 'border-box',
       }}
@@ -118,48 +204,124 @@ const WelcomeState: React.FC<{ onSendQuery: (q: string) => void; maxWidth: numbe
       <p
         style={{
           margin: '8px 0 0',
-          fontSize: 16,
+          fontSize: 15,
           color: colors.textSecondary,
           textAlign: 'center',
         }}
       >
-        Ask anything about your Finance data. I'll find the answer.
+        Ask a question about your data — I'll find the right source and build the query.
       </p>
 
-      {/* Starter cards: 2-column grid, 2+2+1 centered */}
+      {/* Centered input box */}
       <div
         style={{
-          marginTop: 32,
+          marginTop: 28,
           width: '100%',
-          maxWidth: 520,
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
-          gap: 12,
+          maxWidth: Math.min(maxWidth, 640),
         }}
       >
-        {STARTER_QUESTIONS.map((q, idx) => (
-          <StarterCard
-            key={q}
-            question={q}
-            onClick={() => onSendQuery(q)}
-            style={
-              idx === STARTER_QUESTIONS.length - 1
-                ? { gridColumn: '1 / -1', maxWidth: 254, justifySelf: 'center' }
-                : undefined
-            }
+        <div
+          style={{
+            position: 'relative',
+            border: `1.5px solid ${focused ? colors.borderFocus : colors.borderDefault}`,
+            borderRadius: radius.lg,
+            boxShadow: focused
+              ? `0 0 0 3px rgba(0, 111, 207, 0.1), ${shadows.lg}`
+              : shadows.lg,
+            backgroundColor: colors.surfacePrimary,
+            transition: 'border-color 0.15s, box-shadow 0.15s',
+          }}
+        >
+          <textarea
+            ref={textareaRef}
+            value={value}
+            onChange={handleChange}
+            onKeyDown={handleKeyDown}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
+            aria-label="Ask a data question"
+            placeholder="Ask about your data, e.g. 'Top merchants by spend this quarter'"
+            rows={1}
+            style={{
+              width: '100%',
+              minHeight: 52,
+              maxHeight: 160,
+              padding: '14px 52px 14px 16px',
+              border: 'none',
+              outline: 'none',
+              resize: 'none',
+              fontSize: 15,
+              fontFamily: typography.fontPrimary,
+              color: colors.textPrimary,
+              backgroundColor: 'transparent',
+              lineHeight: 1.5,
+              boxSizing: 'border-box',
+            }}
           />
+          <button
+            onClick={handleSend}
+            disabled={!canSend}
+            aria-label="Send query"
+            style={{
+              position: 'absolute',
+              right: 10,
+              bottom: 10,
+              width: 32,
+              height: 32,
+              borderRadius: '50%',
+              border: 'none',
+              backgroundColor: canSend ? colors.amexBlue : colors.surfaceTertiary,
+              cursor: canSend ? 'pointer' : 'default',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'background-color 0.15s',
+              padding: 0,
+            }}
+          >
+            <SendIcon color={canSend ? colors.amexWhite : colors.textTertiary} />
+          </button>
+        </div>
+      </div>
+
+      {/* Starter chips below input — prefill on click */}
+      <div
+        style={{
+          marginTop: 20,
+          width: '100%',
+          maxWidth: Math.min(maxWidth, 640),
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: 8,
+          justifyContent: 'center',
+        }}
+      >
+        {starterQuestions.map((q) => (
+          <StarterChip key={q} question={q} onClick={() => handlePrefill(q)} />
         ))}
       </div>
+
+      {/* Disclaimer */}
+      <p
+        style={{
+          margin: '16px 0 0',
+          fontSize: 11,
+          color: colors.textSecondary,
+          textAlign: 'center',
+          fontFamily: typography.fontPrimary,
+        }}
+      >
+        Always verify results with your data owner before using in reports.
+      </p>
     </div>
   );
 };
 
-/* ── StarterCard ──────────────────────────────────────── */
-const StarterCard: React.FC<{
+/* ── StarterChip ─────────────────────────────────────── */
+const StarterChip: React.FC<{
   question: string;
   onClick: () => void;
-  style?: React.CSSProperties;
-}> = ({ question, onClick, style }) => {
+}> = ({ question, onClick }) => {
   const [hovered, setHovered] = useState(false);
   return (
     <button
@@ -167,20 +329,19 @@ const StarterCard: React.FC<{
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
-        padding: 16,
+        padding: '8px 16px',
         border: `1px solid ${hovered ? colors.amexBlue : colors.borderDefault}`,
-        borderRadius: radius.lg,
+        borderRadius: radius.full,
         backgroundColor: hovered ? colors.infoLight : colors.surfacePrimary,
         cursor: 'pointer',
         textAlign: 'left',
         fontFamily: typography.fontPrimary,
-        fontSize: 14,
+        fontSize: 13,
         fontWeight: 500,
-        color: hovered ? colors.amexBlue : colors.textPrimary,
-        lineHeight: 1.4,
+        color: hovered ? colors.amexBlue : colors.textSecondary,
+        lineHeight: 1.3,
         transition: 'all 0.15s ease',
-        outline: 'none',
-        ...style,
+        whiteSpace: 'nowrap',
       }}
     >
       {question}
@@ -193,16 +354,23 @@ const MessageThread: React.FC<{
   messages: Message[];
   onFollowUp: (q: string) => void;
   maxWidth: number;
-}> = ({ messages, onFollowUp, maxWidth }) => {
+  isProcessing: boolean;
+  activeStepLabel?: string;
+  entities?: Message['entities'];
+  filters?: Message['filters'];
+  exploreName?: string;
+  steps?: PipelineStep[];
+  error?: string | null;
+}> = ({ messages, onFollowUp, maxWidth, isProcessing, activeStepLabel, entities, filters, exploreName, steps, error }) => {
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll to bottom on new messages
+  // Auto-scroll to bottom on new messages or processing state changes
   useEffect(() => {
     const el = containerRef.current;
     if (el) {
       el.scrollTop = el.scrollHeight;
     }
-  }, [messages.length, messages[messages.length - 1]?.content]);
+  }, [messages.length, messages[messages.length - 1]?.content, isProcessing, activeStepLabel]);
 
   return (
     <div
@@ -229,6 +397,34 @@ const MessageThread: React.FC<{
             <AssistantResponse key={msg.id} message={msg} onFollowUp={onFollowUp} />
           ),
         )}
+
+        {/* Processing section — rendered after the last user message while pipeline is active */}
+        {isProcessing && steps && (
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 10,
+            }}
+          >
+            {/* Intent echo — show extracted entities during processing */}
+            {entities && (
+              <div style={{ paddingLeft: 44 }}>
+                <IntentEcho entities={entities} />
+              </div>
+            )}
+
+            {/* Adaptive 3-phase processing indicator */}
+            <ProcessingIndicator
+              steps={steps}
+              entities={entities ?? null}
+              filters={filters ?? { resolved: [], mandatory: [] }}
+              exploreName={exploreName}
+            />
+          </div>
+        )}
+
+        {/* Error is now unified in the assistant message — no duplicate inline error */}
       </div>
     </div>
   );
@@ -346,7 +542,8 @@ const ChatInput: React.FC<{
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
             disabled={isProcessing}
-            placeholder={isProcessing ? 'Cortex is processing...' : 'Ask a question about your data...'}
+            aria-label="Ask a data question"
+            placeholder={isProcessing ? 'Processing your query...' : 'Ask about your data...'}
             rows={1}
             style={{
               width: '100%',
@@ -368,6 +565,7 @@ const ChatInput: React.FC<{
           <button
             onClick={handleSend}
             disabled={!canSend}
+            aria-label="Send query"
             style={{
               position: 'absolute',
               right: 10,
@@ -382,7 +580,6 @@ const ChatInput: React.FC<{
               alignItems: 'center',
               justifyContent: 'center',
               transition: 'background-color 0.15s',
-              outline: 'none',
               padding: 0,
             }}
           >
@@ -395,12 +592,12 @@ const ChatInput: React.FC<{
           style={{
             margin: '6px 0 0',
             fontSize: 11,
-            color: colors.textTertiary,
+            color: colors.textSecondary,
             textAlign: 'center',
             fontFamily: typography.fontPrimary,
           }}
         >
-          Cortex may make mistakes. Always verify critical decisions.
+          Always verify results with your data owner before using in reports.
         </p>
       </div>
     </div>

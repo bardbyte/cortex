@@ -102,6 +102,7 @@ const ResultTable: React.FC<ResultTableProps> = ({ columns, rows, rowCount, trun
               <th
                 key={col}
                 onClick={() => handleSort(col)}
+                aria-sort={sortCol === col ? (sortDir === 'asc' ? 'ascending' : sortDir === 'desc' ? 'descending' : 'none') : undefined}
                 style={{
                   fontSize: 11,
                   fontWeight: 600,

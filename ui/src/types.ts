@@ -1,4 +1,4 @@
-/** Types matching the actual CortexOrchestrator SSE event contract. */
+/** Types matching the pipeline SSE event contract. */
 
 export type StepName =
   | 'intent_classification'
@@ -91,16 +91,6 @@ export interface SqlGeneratedPayload {
   model: string;
 }
 
-// --- Results ---
-
-export interface ResultsPayload {
-  step: 'results_processing';
-  columns: string[];
-  rows: Record<string, unknown>[];
-  row_count: number;
-  truncated: boolean;
-}
-
 // --- Follow-ups ---
 
 export interface FollowUpsPayload {
@@ -118,6 +108,7 @@ export interface DonePayload {
   conversation_id: string;
   error?: string;
   action?: string;
+  message?: string;
 }
 
 // --- Filter resolution detail ---
@@ -157,9 +148,9 @@ export interface Message {
   content: string;
   timestamp: Date;
   // Assistant-specific fields
-  results?: ResultsPayload;
   sql?: string;
   explore?: string;
+  model?: string;
   confidence?: number;
   followUps?: string[];
   action?: PipelineAction;
@@ -168,6 +159,12 @@ export interface Message {
   steps?: PipelineStep[];
   totalDurationMs?: number;
   traceId?: string;
+  results?: {
+    columns: string[];
+    rows: Record<string, unknown>[];
+    rowCount: number;
+    truncated: boolean;
+  };
   filters?: {
     resolved: ResolvedFilter[];
     mandatory: MandatoryFilter[];
@@ -187,14 +184,16 @@ export interface Session {
   lastMessage: string;
   timestamp: Date;
   messages: Message[];
+  /** Backend conversation ID for multi-turn context. Set from done.conversation_id. */
+  conversationId?: string;
 }
 
 export const PIPELINE_STEPS: Omit<PipelineStep, 'status' | 'expanded'>[] = [
-  { name: 'intent_classification', label: 'Intent Classification', subLabel: 'Parsing query type and extracting entities' },
-  { name: 'retrieval', label: 'Semantic Search', subLabel: 'Finding matching fields via pgvector + graph' },
-  { name: 'explore_scoring', label: 'Explore Scoring', subLabel: 'Structural scoring with base view ownership' },
-  { name: 'filter_resolution', label: 'Filter Resolution', subLabel: 'Resolving filter values to database codes' },
-  { name: 'sql_generation', label: 'SQL Generation', subLabel: 'Building query via Looker MCP' },
-  { name: 'results_processing', label: 'Results Processing', subLabel: 'Parsing and formatting query results' },
-  { name: 'response_formatting', label: 'Response Formatting', subLabel: 'Generating answer and follow-ups' },
+  { name: 'intent_classification', label: 'Intent Classification', subLabel: 'Understanding your question' },
+  { name: 'retrieval', label: 'Semantic Search', subLabel: 'Finding the right fields across your data' },
+  { name: 'explore_scoring', label: 'Explore Scoring', subLabel: 'Matching to the best data source' },
+  { name: 'filter_resolution', label: 'Filter Resolution', subLabel: 'Translating your filters to exact values' },
+  { name: 'sql_generation', label: 'SQL Generation', subLabel: 'Building the query' },
+  { name: 'results_processing', label: 'Results Processing', subLabel: 'Processing query results' },
+  { name: 'response_formatting', label: 'Response Formatting', subLabel: 'Preparing your answer' },
 ];

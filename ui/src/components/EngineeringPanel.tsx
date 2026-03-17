@@ -92,6 +92,7 @@ const StatePill: React.FC<{ state: PanelState }> = ({ state }) => {
   );
 };
 
+
 /* ------------------------------------------------------------------ */
 /*  Confidence color helper                                            */
 /* ------------------------------------------------------------------ */
@@ -180,6 +181,30 @@ const EngineeringPanel: React.FC<EngineeringPanelProps> = ({
         </span>
       </div>
 
+      {/* ---- Summary Header (complete state only) ---- */}
+      {panelState === 'complete' && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '8px 16px',
+            borderBottom: `1px solid ${colors.borderDefault}`,
+            flexShrink: 0,
+          }}
+        >
+          <span
+            style={{
+              fontSize: 12,
+              color: colors.textSecondary,
+              fontFamily: typography.fontPrimary,
+            }}
+          >
+            {steps.length} steps &middot; {formatDuration(totalDurationMs)} total &middot; {overallConfidence > 0 ? `${Math.round(overallConfidence * 100)}% match` : '\u2014'}
+          </span>
+        </div>
+      )}
+
       {/* ---- Scrollable Step List ---- */}
       <div
         style={{
@@ -197,27 +222,6 @@ const EngineeringPanel: React.FC<EngineeringPanelProps> = ({
           />
         ))}
 
-        {steps.length === 0 && (
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: '48px 16px',
-              color: colors.textTertiary,
-              fontSize: 13,
-              textAlign: 'center',
-              gap: 8,
-            }}
-          >
-            <svg width="32" height="32" viewBox="0 0 32 32" fill="none" opacity={0.4}>
-              <circle cx="16" cy="16" r="14" stroke={colors.textTertiary} strokeWidth="1.5" strokeDasharray="4 3" />
-              <path d="M16 10V16L20 18" stroke={colors.textTertiary} strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
-            <span>Ask a question to see the pipeline trace</span>
-          </div>
-        )}
       </div>
 
       {/* ---- Panel Footer (56px) ---- */}
@@ -255,7 +259,7 @@ const EngineeringPanel: React.FC<EngineeringPanelProps> = ({
               color: overallConfidence > 0 ? confidenceColor(overallConfidence) : colors.textTertiary,
               fontFamily: typography.fontMono,
               lineHeight: 1.3,
-              fontVariantNumeric: 'tabular-nums',
+              fontFeatureSettings: typography.tabularNums,
             }}
           >
             {overallConfidence > 0 ? `${Math.round(overallConfidence * 100)}%` : '\u2014'}
@@ -280,7 +284,7 @@ const EngineeringPanel: React.FC<EngineeringPanelProps> = ({
                   display: 'flex',
                   alignItems: 'center',
                   gap: 6,
-                  fontSize: 10,
+                  fontSize: 11,
                   fontFamily: typography.fontPrimary,
                   color: colors.textSecondary,
                   whiteSpace: 'nowrap',
@@ -293,6 +297,7 @@ const EngineeringPanel: React.FC<EngineeringPanelProps> = ({
                   style={{
                     fontWeight: 600,
                     fontFamily: typography.fontMono,
+                    fontFeatureSettings: typography.tabularNums,
                     color: confidenceColor(entry.value),
                   }}
                 >

@@ -1,46 +1,52 @@
-/** Design tokens from cortex-demo-ui-design.md — single source of truth. */
+/** Radix UI — Design Tokens. Single source of truth. */
 
 export const colors = {
-  // Brand
+  // Brand (always fixed — not theme-aware)
   amexBlue: '#006FCF',
   amexDarkBlue: '#00175A',
   amexWhite: '#FFFFFF',
 
   // Surface
-  surfacePrimary: '#FFFFFF',
-  surfaceSecondary: '#F7F8F9',
-  surfaceTertiary: '#F0F2F5',
-  surfaceInverse: '#00175A',
+  surfacePrimary: 'var(--color-surface-primary)',
+  surfaceSecondary: 'var(--color-surface-secondary)',
+  surfaceTertiary: 'var(--color-surface-tertiary)',
+  surfaceInverse: 'var(--color-surface-inverse)',
 
   // Text
-  textPrimary: '#0D1117',
-  textSecondary: '#6B7280',
-  textTertiary: '#9CA3AF',
-  textInverse: '#FFFFFF',
-  textLink: '#006FCF',
+  textPrimary: 'var(--color-text-primary)',
+  textSecondary: 'var(--color-text-secondary)',
+  textTertiary: 'var(--color-text-tertiary)',
+  textInverse: 'var(--color-text-inverse)',
+  textLink: 'var(--color-text-link)',
 
   // Semantic
-  success: '#008767',
-  successLight: '#E6F4F1',
-  warning: '#B37700',
-  warningLight: '#FFF8E6',
-  error: '#C40000',
-  errorLight: '#FDE8E8',
-  infoLight: '#E6F0FA',
+  success: 'var(--color-success)',
+  successLight: 'var(--color-success-light)',
+  warning: 'var(--color-warning)',
+  warningLight: 'var(--color-warning-light)',
+  error: 'var(--color-error)',
+  errorLight: 'var(--color-error-light)',
+  infoLight: 'var(--color-info-light)',
+  filterSynonym: 'var(--color-filter-synonym)',
+  filterSynonymLight: 'var(--color-filter-synonym-light)',
 
   // Pipeline steps
-  stepPending: '#9CA3AF',
-  stepActive: '#006FCF',
-  stepComplete: '#008767',
-  stepWarning: '#B37700',
-  stepError: '#C40000',
+  stepPending: 'var(--color-step-pending)',
+  stepActive: 'var(--color-step-active)',
+  stepComplete: 'var(--color-step-complete)',
+  stepWarning: 'var(--color-step-warning)',
+  stepError: 'var(--color-step-error)',
 
   // Borders
-  borderDefault: '#E5E7EB',
-  borderStrong: '#D1D5DB',
-  borderFocus: '#006FCF',
+  borderDefault: 'var(--color-border-default)',
+  borderStrong: 'var(--color-border-strong)',
+  borderFocus: 'var(--color-border-focus)',
 
-  // Dark mode
+  // Code blocks (SQL)
+  codeSurface: 'var(--color-code-surface)',
+  backdrop: 'var(--color-backdrop)',
+
+  // Dark-specific (always fixed — used for always-dark UI elements)
   darkSurface: '#00175A',
   darkSurfaceRaised: '#0A2472',
   darkBorder: '#1E3A7A',
@@ -49,8 +55,10 @@ export const colors = {
 } as const;
 
 export const typography = {
-  fontPrimary: "'Inter', 'SF Pro Display', -apple-system, BlinkMacSystemFont, sans-serif",
-  fontMono: "'JetBrains Mono', 'Fira Code', 'SF Mono', Consolas, monospace",
+  fontPrimary: "'Inter', 'SF Pro Text', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+  fontMono: "'Geist Mono', 'SF Mono', 'Cascadia Code', Consolas, 'Courier New', monospace",
+  /** Use on all numeric displays (confidence, duration, percentages) for proper column alignment. */
+  tabularNums: "'tnum' 1, 'lnum' 1" as const,
 } as const;
 
 export const radius = {

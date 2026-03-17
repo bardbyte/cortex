@@ -253,6 +253,47 @@ async def get_trace(trace_id: str) -> dict[str, Any]:
     return trace.to_dict()
 
 
+# ── Curated starter questions for the welcome screen ──────────────────
+# Mix of easy/medium/hard across explores, validated against 80% coverage doc.
+STARTER_QUESTIONS: list[dict[str, str]] = [
+    {
+        "text": "What is the total billed business for the OPEN segment?",
+        "difficulty": "easy",
+        "explore": "finance_cardmember_360",
+    },
+    {
+        "text": "How many attrited customers do we have by generation?",
+        "difficulty": "medium",
+        "explore": "finance_cardmember_360",
+    },
+    {
+        "text": "What is our attrition rate for Q4 2025?",
+        "difficulty": "hard",
+        "explore": "finance_cardmember_360",
+    },
+    {
+        "text": "What is the highest billed business by merchant category?",
+        "difficulty": "medium",
+        "explore": "finance_merchant_profitability",
+    },
+    {
+        "text": "Show me the top 5 travel verticals by gross sales and booking count",
+        "difficulty": "hard",
+        "explore": "finance_travel_sales",
+    },
+    {
+        "text": "Total card issuance volume year over year",
+        "difficulty": "easy",
+        "explore": "finance_card_issuance",
+    },
+]
+
+# Per-explore sample questions for the capabilities response.
+_EXPLORE_QUESTIONS: dict[str, list[str]] = {}
+for _q in STARTER_QUESTIONS:
+    _EXPLORE_QUESTIONS.setdefault(_q["explore"], []).append(_q["text"])
+
+
 @app.get("/api/v1/capabilities")
 def capabilities_v1() -> dict[str, Any]:
     """Return system capabilities for the frontend."""
@@ -261,12 +302,13 @@ def capabilities_v1() -> dict[str, Any]:
         explores.append({
             "name": name,
             "description": desc,
-            "sample_questions": [],  # TODO: populate from golden dataset
+            "sample_questions": _EXPLORE_QUESTIONS.get(name, []),
         })
 
     return {
         "version": "1.0.0",
         "explores": explores,
+        "starter_questions": STARTER_QUESTIONS,
         "features": {
             "streaming": True,
             "follow_ups": True,
