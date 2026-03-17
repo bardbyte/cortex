@@ -342,9 +342,14 @@ function renderExploreScoring(detail: Record<string, unknown>): React.ReactNode 
 }
 
 function renderFilterResolution(detail: Record<string, unknown>): React.ReactNode {
-  const resolved = (detail.resolved as ResolvedFilter[]) || [];
-  const mandatory = (detail.mandatory as MandatoryFilter[]) || [];
-  const unresolved = (detail.unresolved as Array<{ field: string; user_said: string; reason?: string }>) || [];
+  // Backend step_complete puts resolved filters under "resolved_detail" (array of ResolvedFilter),
+  // while "resolved" is the raw filter dict from the explore. Fall back defensively.
+  const rawResolved = detail.resolved_detail ?? detail.resolved;
+  const resolved = (Array.isArray(rawResolved) ? rawResolved : []) as ResolvedFilter[];
+  const rawMandatory = detail.mandatory_detail ?? detail.mandatory;
+  const mandatory = (Array.isArray(rawMandatory) ? rawMandatory : []) as MandatoryFilter[];
+  const rawUnresolved = detail.unresolved;
+  const unresolved = (Array.isArray(rawUnresolved) ? rawUnresolved : []) as Array<{ field: string; user_said: string; reason?: string }>;
 
   const passBadgeColor: Record<string, { bg: string; fg: string }> = {
     exact: { bg: colors.successLight, fg: colors.success },
