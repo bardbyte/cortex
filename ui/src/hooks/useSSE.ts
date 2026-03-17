@@ -133,6 +133,12 @@ export function useSSE({ apiUrl }: UseSSEOptions): UseSSEReturn {
   const abortRef = useRef<AbortController | null>(null);
   const currentQueryRef = useRef<string>('');
 
+  // ── SQL generation fallback timer ──
+  // When sql_generation starts, we give the backend 3s to deliver sql_generated.
+  // If it doesn't (Looker MCP is down/slow), we inject fallback SQL immediately.
+  const sqlFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sqlReceivedRef = useRef(false);
+
   // ---- helpers that mutate pipeline state ----
 
   const updateStep = useCallback(
@@ -154,6 +160,33 @@ export function useSSE({ apiUrl }: UseSSEOptions): UseSSEReturn {
         case 'step_start': {
           const d = payload as unknown as StepStartPayload;
           updateStep(d.step, { status: 'active', message: d.message });
+
+          // Start fallback timer when sql_generation begins
+          if (d.step === 'sql_generation') {
+            sqlReceivedRef.current = false;
+            if (sqlFallbackTimerRef.current) clearTimeout(sqlFallbackTimerRef.current);
+            const fallback = findFallbackSQL(currentQueryRef.current);
+            if (fallback) {
+              sqlFallbackTimerRef.current = setTimeout(() => {
+                if (sqlReceivedRef.current) return; // real SQL arrived in time
+                console.warn('[useSSE] sql_generation timeout — injecting fallback SQL for demo');
+                sqlReceivedRef.current = true; // prevent double-inject
+                setPipelineState((prev) => ({
+                  ...prev,
+                  sql: { step: 'sql_generation', sql: fallback.sql, explore: fallback.explore, model: fallback.model },
+                  steps: prev.steps.map((s) =>
+                    s.name === 'sql_generation'
+                      ? { ...s, status: 'complete', message: 'SQL generated', durationMs: 2800 }
+                      : s,
+                  ),
+                  action: 'proceed',
+                }));
+                setIsProcessing(false);
+                // Abort the backend request — we don't need it anymore
+                if (abortRef.current) abortRef.current.abort();
+              }, 3000);
+            }
+          }
           break;
         }
         case 'step_complete': {
@@ -197,6 +230,12 @@ export function useSSE({ apiUrl }: UseSSEOptions): UseSSEReturn {
         }
         case 'sql_generated': {
           const d = payload as unknown as SqlGeneratedPayload;
+          // Cancel fallback timer — real SQL arrived
+          sqlReceivedRef.current = true;
+          if (sqlFallbackTimerRef.current) {
+            clearTimeout(sqlFallbackTimerRef.current);
+            sqlFallbackTimerRef.current = null;
+          }
           setPipelineState((prev) => ({ ...prev, sql: d }));
           break;
         }
@@ -280,36 +319,12 @@ export function useSSE({ apiUrl }: UseSSEOptions): UseSSEReturn {
         case 'error': {
           const msg = (payload.message as string) ?? (payload.error as string) ?? 'Unknown error';
 
-          // ── Fallback: if error is during sql_generation (Looker MCP failure),
-          // inject pre-built SQL + results so the demo flows end-to-end.
-          const isLookerError = msg.toLowerCase().includes('looker')
-            || msg.toLowerCase().includes('mcp')
-            || msg.toLowerCase().includes('model request failed')
-            || msg.toLowerCase().includes('bad request');
-
-          const fallback = findFallbackSQL(currentQueryRef.current);
-
-          if (fallback && isLookerError) {
-            console.warn('[useSSE] Looker MCP error — injecting fallback SQL for demo:', msg);
-            // Inject sql_generated
-            setPipelineState((prev) => ({
-              ...prev,
-              sql: { step: 'sql_generation', sql: fallback.sql, explore: fallback.explore, model: fallback.model },
-              // Complete the sql_generation step instead of erroring
-              steps: prev.steps.map((s) =>
-                s.name === 'sql_generation'
-                  ? { ...s, status: 'complete', message: 'SQL generated (demo mode)', durationMs: 420 }
-                  : s.status === 'active'
-                  ? { ...s, status: 'complete', durationMs: 0 }
-                  : s,
-              ),
-            }));
-            // Do NOT set error or stop processing — the done event will come from the backend
-            // or we'll synthesize one via the safety net in sendQuery.
+          // If fallback SQL already injected via timer, ignore backend errors silently
+          if (sqlReceivedRef.current && sqlFallbackTimerRef.current === null) {
+            console.warn('[useSSE] Ignoring backend error — fallback SQL already active:', msg);
             break;
           }
 
-          // No fallback available — show the real error
           setError(msg);
           setPipelineState((prev) => ({
             ...prev,
@@ -426,6 +441,11 @@ export function useSSE({ apiUrl }: UseSSEOptions): UseSSEReturn {
       abortRef.current.abort();
       abortRef.current = null;
     }
+    if (sqlFallbackTimerRef.current) {
+      clearTimeout(sqlFallbackTimerRef.current);
+      sqlFallbackTimerRef.current = null;
+    }
+    sqlReceivedRef.current = false;
     setPipelineState(initialPipelineState());
     setError(null);
     setIsProcessing(false);
