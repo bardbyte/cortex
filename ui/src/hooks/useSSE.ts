@@ -147,6 +147,7 @@ export function useSSE({ apiUrl }: UseSSEOptions): UseSSEReturn {
 
   const handleEvent = useCallback(
     (eventType: string, payload: Record<string, unknown>) => {
+      console.log(`[SSE] ${eventType}`, payload);
       switch (eventType) {
         case 'step_start': {
           const d = payload as unknown as StepStartPayload;
@@ -230,13 +231,27 @@ export function useSSE({ apiUrl }: UseSSEOptions): UseSSEReturn {
           break;
         }
         case 'entities_extracted': {
+          // Defensive: ensure array fields are actually arrays and contain only strings.
+          // Backend may send null, a string, or objects like {field_hint, values, operator}.
+          const toStringArray = (v: unknown): string[] => {
+            if (!Array.isArray(v)) return [];
+            return v.map((item) => {
+              if (typeof item === 'string') return item;
+              // Filter objects: stringify to readable form
+              if (item && typeof item === 'object') {
+                return (item as Record<string, unknown>).field_hint as string
+                  ?? JSON.stringify(item);
+              }
+              return String(item);
+            });
+          };
           setPipelineState((prev) => ({
             ...prev,
             entities: {
-              intent: (payload.intent as string) ?? '',
-              metrics: (payload.metrics as string[]) ?? [],
-              dimensions: (payload.dimensions as string[]) ?? [],
-              filters: (payload.filters as string[]) ?? [],
+              intent: String(payload.intent ?? ''),
+              metrics: toStringArray(payload.metrics),
+              dimensions: toStringArray(payload.dimensions),
+              filters: toStringArray(payload.filters),
               time_range: (payload.time_range as string | null) ?? null,
             },
           }));
