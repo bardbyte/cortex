@@ -5,9 +5,7 @@ export type StepName =
   | 'retrieval'
   | 'explore_scoring'
   | 'filter_resolution'
-  | 'sql_generation'
-  | 'results_processing'
-  | 'response_formatting';
+  | 'sql_generation';
 
 export type StepStatus = 'pending' | 'active' | 'complete' | 'warning' | 'error';
 
@@ -194,6 +192,4 @@ export const PIPELINE_STEPS: Omit<PipelineStep, 'status' | 'expanded'>[] = [
   { name: 'explore_scoring', label: 'Explore Scoring', subLabel: 'Matching to the best data source' },
   { name: 'filter_resolution', label: 'Filter Resolution', subLabel: 'Translating your filters to exact values' },
   { name: 'sql_generation', label: 'SQL Generation', subLabel: 'Building the query' },
-  { name: 'results_processing', label: 'Results Processing', subLabel: 'Processing query results' },
-  { name: 'response_formatting', label: 'Response Formatting', subLabel: 'Preparing your answer' },
 ];

@@ -304,25 +304,6 @@ export function useSSE({ apiUrl }: UseSSEOptions): UseSSEReturn {
                   : s,
               ),
             }));
-            // Inject results after a brief delay to simulate processing
-            setTimeout(() => {
-              setPipelineState((prev) => ({
-                ...prev,
-                results: {
-                  columns: fallback.columns,
-                  rows: fallback.rows,
-                  rowCount: fallback.rows.length,
-                  truncated: false,
-                },
-                steps: prev.steps.map((s) =>
-                  s.name === 'results_processing'
-                    ? { ...s, status: 'complete', message: 'Results ready (demo mode)', durationMs: 85 }
-                    : s.name === 'response_formatting'
-                    ? { ...s, status: 'complete', message: 'Complete', durationMs: 12 }
-                    : s,
-                ),
-              }));
-            }, 300);
             // Do NOT set error or stop processing — the done event will come from the backend
             // or we'll synthesize one via the safety net in sendQuery.
             break;
