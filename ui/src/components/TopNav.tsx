@@ -28,7 +28,9 @@ export default function TopNav({
   const engineeringRef = useRef<HTMLButtonElement>(null);
   const [pillStyle, setPillStyle] = useState<CSSProperties>({});
 
+  // For the segmented control pill, only track analyst/engineering (playground is a separate tab)
   useEffect(() => {
+    if (viewMode === 'playground') return; // no pill movement for playground
     const activeRef = viewMode === 'analyst' ? analystRef : engineeringRef;
     const container = segmentedRef.current;
     const button = activeRef.current;
@@ -221,23 +223,46 @@ export default function TopNav({
         </div>
       </div>
 
-      {/* Center: Segmented control */}
-      <div ref={segmentedRef} style={segmentedContainerStyle}>
-        {/* Animated pill background */}
-        <div style={pillStyle} />
+      {/* Center: Segmented control + Playground tab */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <div ref={segmentedRef} style={segmentedContainerStyle}>
+          {/* Animated pill background */}
+          {viewMode !== 'playground' && <div style={pillStyle} />}
+          <button
+            ref={analystRef}
+            style={viewMode === 'analyst' ? activeSegmentText : inactiveSegmentText}
+            onClick={() => onViewModeChange('analyst')}
+          >
+            Chat
+          </button>
+          <button
+            ref={engineeringRef}
+            style={viewMode === 'engineering' ? activeSegmentText : inactiveSegmentText}
+            onClick={() => onViewModeChange('engineering')}
+          >
+            Pipeline
+          </button>
+        </div>
         <button
-          ref={analystRef}
-          style={viewMode === 'analyst' ? activeSegmentText : inactiveSegmentText}
-          onClick={() => onViewModeChange('analyst')}
+          style={{
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            fontSize: '14px',
+            fontWeight: viewMode === 'playground' ? 600 : 500,
+            fontFamily: typography.fontPrimary,
+            color: viewMode === 'playground' ? '#FFFFFF' : 'rgba(255,255,255,0.60)',
+            padding: '0 16px',
+            borderBottom: viewMode === 'playground' ? '2px solid #FFFFFF' : '2px solid transparent',
+            paddingBottom: '2px',
+            transition: 'color 150ms ease, border-color 150ms ease',
+            whiteSpace: 'nowrap',
+          }}
+          onClick={() => onViewModeChange('playground')}
+          onMouseEnter={(e) => { if (viewMode !== 'playground') e.currentTarget.style.color = 'rgba(255,255,255,0.85)'; }}
+          onMouseLeave={(e) => { if (viewMode !== 'playground') e.currentTarget.style.color = 'rgba(255,255,255,0.60)'; }}
         >
-          Chat
-        </button>
-        <button
-          ref={engineeringRef}
-          style={viewMode === 'engineering' ? activeSegmentText : inactiveSegmentText}
-          onClick={() => onViewModeChange('engineering')}
-        >
-          Pipeline
+          Metric Playground
         </button>
       </div>
 

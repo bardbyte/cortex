@@ -129,7 +129,7 @@ export interface MandatoryFilter {
 
 // --- UI state ---
 
-export type ViewMode = 'analyst' | 'engineering';
+export type ViewMode = 'analyst' | 'engineering' | 'playground';
 
 export interface PipelineStep {
   name: StepName;

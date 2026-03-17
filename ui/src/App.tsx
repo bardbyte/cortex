@@ -9,6 +9,7 @@ import TopNav from './components/TopNav';
 import Sidebar from './components/Sidebar';
 import ChatPanel from './components/ChatPanel';
 import EngineeringPanel from './components/EngineeringPanel';
+import MetricPlayground from './components/playground/MetricPlayground';
 
 const API_URL = 'http://localhost:8080';
 const NAV_HEIGHT = 64;
@@ -189,6 +190,7 @@ export default function App() {
   };
 
   const isEngineering = viewMode === 'engineering';
+  const isPlayground = viewMode === 'playground';
 
   const chatPanelContainerStyle: CSSProperties = {
     flex: isEngineering ? '0 0 55%' : '1 1 auto',
@@ -203,52 +205,73 @@ export default function App() {
     transition: 'flex 250ms ease-out',
   };
 
+  // Track pre-playground view mode so "Back to Cortex" returns to the right mode
+  const prevModeRef = useRef<ViewMode>('analyst');
+  const handlePlayground = useCallback((mode: ViewMode) => {
+    if (mode === 'playground') {
+      prevModeRef.current = viewMode === 'playground' ? 'analyst' : viewMode;
+    }
+    setViewMode(mode);
+  }, [viewMode]);
+
+  const handleBackFromPlayground = useCallback(() => {
+    setViewMode(prevModeRef.current);
+  }, []);
+
   return (
     <div style={appContainerStyle}>
       <TopNav
         viewMode={viewMode}
-        onViewModeChange={setViewMode}
+        onViewModeChange={handlePlayground}
         sidebarOpen={sidebarOpen}
         onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
       />
 
       <div style={bodyStyle}>
-        <Sidebar
-          sessions={sessions}
-          activeSessionId={activeSessionId}
-          onSelectSession={handleSelectSession}
-          onNewSession={handleNewSession}
-          open={sidebarOpen}
-        />
+        {!isPlayground && (
+          <Sidebar
+            sessions={sessions}
+            activeSessionId={activeSessionId}
+            onSelectSession={handleSelectSession}
+            onNewSession={handleNewSession}
+            open={sidebarOpen}
+          />
+        )}
 
         <div style={mainContentStyle}>
-          <div style={chatPanelContainerStyle}>
-            <ChatPanel
-              messages={messages}
-              onSendQuery={handleSendQuery}
-              isProcessing={isProcessing}
-              viewMode={viewMode}
-              activeStepLabel={activeStepLabel}
-              entities={pipelineState.entities ?? undefined}
-              filters={
-                pipelineState.filters.resolved.length > 0 || pipelineState.filters.mandatory.length > 0
-                  ? pipelineState.filters
-                  : undefined
-              }
-              exploreName={pipelineState.sql?.explore}
-              steps={pipelineState.steps}
-              error={sseError}
-            />
-          </div>
+          {isPlayground ? (
+            <MetricPlayground onBack={handleBackFromPlayground} />
+          ) : (
+            <>
+              <div style={chatPanelContainerStyle}>
+                <ChatPanel
+                  messages={messages}
+                  onSendQuery={handleSendQuery}
+                  isProcessing={isProcessing}
+                  viewMode={viewMode}
+                  activeStepLabel={activeStepLabel}
+                  entities={pipelineState.entities ?? undefined}
+                  filters={
+                    pipelineState.filters.resolved.length > 0 || pipelineState.filters.mandatory.length > 0
+                      ? pipelineState.filters
+                      : undefined
+                  }
+                  exploreName={pipelineState.sql?.explore}
+                  steps={pipelineState.steps}
+                  error={sseError}
+                />
+              </div>
 
-          <div style={engineeringPanelContainerStyle}>
-            <EngineeringPanel
-              steps={pipelineState.steps}
-              overallConfidence={overallConfidence}
-              totalDurationMs={totalDurationMs}
-              isProcessing={isProcessing}
-            />
-          </div>
+              <div style={engineeringPanelContainerStyle}>
+                <EngineeringPanel
+                  steps={pipelineState.steps}
+                  overallConfidence={overallConfidence}
+                  totalDurationMs={totalDurationMs}
+                  isProcessing={isProcessing}
+                />
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>
