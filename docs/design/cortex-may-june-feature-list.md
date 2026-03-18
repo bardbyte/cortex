@@ -1,4 +1,4 @@
-# Cortex Platform — May/June 2026 Feature Delivery
+# Radix Platform — May/June 2026 Feature Delivery
 
 **Prepared by:** Saheb Singh | **Date:** March 18, 2026 | **For:** Abhishek
 **Status:** Planning — feature scope for alignment
@@ -12,7 +12,7 @@ Four layers shipping by end of June 2026:
 | Layer | What It Is | Primary User |
 |-------|-----------|-------------|
 | **Platform Foundation** | Databases, embedding pipelines, auth, deployment infrastructure | Engineering team |
-| **Cortex AI Pipeline** | Natural language → SQL via semantic understanding | Finance analysts, BU leads |
+| **Radix AI Pipeline** | Natural language → SQL via semantic understanding | Finance analysts, BU leads |
 | **Metric Playground** | Interactive metric definition + real-time AI impact visualization | Data stewards, analysts, executives |
 | **Control Plane** | Centralized metadata corpus management + governance dashboard | Data stewards, data governance leads |
 
@@ -34,14 +34,14 @@ Before any feature works, these foundational layers must exist. Most are deliver
 | F4 | **Embedding Pipeline (BGE-large)** | Generates 1024-dim embeddings for every measure and dimension across all indexed explores. Uses BGE-large with query/document prefix distinction. Batch-loadable for new BU onboarding. | Delivered |
 | F5 | **Filter Catalog Generation** | Auto-derives known dimension values from LookML parse → `filter_catalog.json`. Includes value_map, synonyms, yesno_dimensions, partition_fields per explore. | Delivered |
 | F6 | **SafeChain / CIBIS Gateway** | All LLM calls (Gemini Flash) and embedding calls (text-embedding-005) route through Amex's SafeChain gateway. Handles auth, audit logging, model routing. Integrated at module level. | Delivered |
-| F7 | **MCP Toolbox Sidecar** | Looker MCP server running as sidecar container. Exposes 33 Looker tools (query-sql, get-explore, list-fields, etc.) via Model Context Protocol. Cortex API calls MCP for deterministic SQL generation. | Delivered |
+| F7 | **MCP Toolbox Sidecar** | Looker MCP server running as sidecar container. Exposes 33 Looker tools (query-sql, get-explore, list-fields, etc.) via Model Context Protocol. Radix API calls MCP for deterministic SQL generation. | Delivered |
 | F8 | **FastAPI Server + SSE Streaming** | Production API server with streaming Server-Sent Events. Endpoints: `/query`, `/trace`, `/feedback`, `/capabilities`, `/health`. CORS-ready for ChatGPT Enterprise frontend. | Delivered |
 
 ### 0.2 Platform Infrastructure (Shipping May–June)
 
 | # | Component | Description | Target |
 |---|-----------|-------------|--------|
-| F9 | **GKE Deployment Architecture** | Cortex API + MCP sidecar as GKE pod. Auto-scaling, health probes, config volumes, secret management. Production-grade container orchestration. | June |
+| F9 | **GKE Deployment Architecture** | Radix API + MCP sidecar as GKE pod. Auto-scaling, health probes, config volumes, secret management. Production-grade container orchestration. | June |
 | F10 | **LookML Auto-Generation Pipeline** | Enrichment metadata (from Lumi) → auto-generates LookML view definitions with descriptions, labels, required_filters, synonyms. Git-based workflow: generate → PR → review → merge → graph refresh. | June |
 | F11 | **Embedding Refresh Pipeline** | Scheduled job to re-embed fields when LookML changes. Detects new/modified fields, generates embeddings, updates pgvector. Ensures vector index stays current with semantic layer. | May |
 | F12 | **BQ Log Mining Pipeline** | ETL job that scans 180 days of BigQuery query logs (INFORMATION_SCHEMA.JOBS). Extracts dimension value patterns from WHERE clauses to bootstrap filter catalog for new BUs. | May |
@@ -53,7 +53,7 @@ Before any feature works, these foundational layers must exist. Most are deliver
 
 ---
 
-## 1. Cortex AI Pipeline — "Ask your data in plain English"
+## 1. Radix AI Pipeline — "Ask your data in plain English"
 
 The core NL2SQL intelligence layer. User types a business question, gets an answer with full explainability.
 
@@ -86,20 +86,20 @@ The core NL2SQL intelligence layer. User types a business question, gets an answ
 | 18 | **Embedding-Based Filter Resolution** | Pass 4 of filter cascade — when exact/synonym/fuzzy all miss, use vector similarity to resolve filter values | May |
 | 19 | **SafeChain Token Auto-Refresh** | Automatic token renewal on 401 — eliminates manual server restart on long-running sessions | May |
 | 20 | **Feedback Loop** | Thumbs up/down + correction UI on every answer. Feeds golden dataset expansion + filter catalog improvement. | May |
-| 21 | **Production Deployment (GKE)** | Cortex API + MCP sidecar on GKE. Auto-scaling, health checks, trace persistence in PostgreSQL. | June |
+| 21 | **Production Deployment (GKE)** | Radix API + MCP sidecar on GKE. Auto-scaling, health checks, trace persistence in PostgreSQL. | June |
 
 ---
 
 ## 2. Semantic Enrichment (Lumi) — Renuka's Workstream
 
-The metadata enrichment layer that feeds Cortex, Looker, and the Control Plane. Renuka owns this. Key deliverables we depend on:
+The metadata enrichment layer that feeds Radix, Looker, and the Control Plane. Renuka owns this. Key deliverables we depend on:
 
-| # | Feature | Description | Intersection with Cortex |
+| # | Feature | Description | Intersection with Radix |
 |---|---------|-------------|--------------------------|
-| 22 | **Steward Enrichment UX** | Web interface for data stewards to add descriptions, synonyms, business terms to dimensions and measures | Enriched metadata flows into Cortex's vector search + filter catalog |
-| 23 | **Synonym Registry** | Structured mapping of business terms → technical column names (e.g., "total spend" → `total_billed_business_amt`) | Directly consumed by Cortex filter resolution + retrieval |
+| 22 | **Steward Enrichment UX** | Web interface for data stewards to add descriptions, synonyms, business terms to dimensions and measures | Enriched metadata flows into Radix's vector search + filter catalog |
+| 23 | **Synonym Registry** | Structured mapping of business terms → technical column names (e.g., "total spend" → `total_billed_business_amt`) | Directly consumed by Radix filter resolution + retrieval |
 | 24 | **Dimension Value Catalog** | Known values per dimension with business-friendly labels (e.g., `CPS` = "Consumer Personal Services") | Powers Pass 1-2 of filter resolution cascade |
-| 25 | **LookML Auto-Generation** | Enrichment metadata auto-generates LookML view definitions — descriptions, labels, required_filters | Cortex reads LookML for graph structure + explore descriptions |
+| 25 | **LookML Auto-Generation** | Enrichment metadata auto-generates LookML view definitions — descriptions, labels, required_filters | Radix reads LookML for graph structure + explore descriptions |
 | 26 | **Enrichment Quality Scoring** | Measures completeness per field — % with descriptions, % with synonyms, % with value catalogs | Feeds Metric Playground "enriched vs. not" comparison |
 | 27 | **Bulk Import from BQ Logs** | Bootstrap dimension values by analyzing 180 days of BigQuery WHERE clause patterns | Jumpstarts filter catalog for new BUs without manual steward entry |
 
@@ -107,7 +107,7 @@ The metadata enrichment layer that feeds Cortex, Looker, and the Control Plane. 
 
 ## 3. Metric Playground — "See how your metric lives in the AI"
 
-Interactive workspace where users define metrics, explore hierarchy, and see in real time how AI interprets and uses them. This is the bridge between Renuka's enrichment work and Cortex's AI pipeline — **the place where stewards see their work come alive.**
+Interactive workspace where users define metrics, explore hierarchy, and see in real time how AI interprets and uses them. This is the bridge between Renuka's enrichment work and Radix's AI pipeline — **the place where stewards see their work come alive.**
 
 ### 3.1 Delivered (In Demo Today — Static/Educational)
 
@@ -123,7 +123,7 @@ Interactive workspace where users define metrics, explore hierarchy, and see in 
 | # | Feature | Description | Target |
 |---|---------|-------------|--------|
 | 32 | **Live Metric Editor** | Data stewards define a metric (name, SQL aggregation, description, synonyms, required filters) in a guided form — changes save to enrichment store | May |
-| 33 | **Real-Time AI Impact Preview** | After editing a metric, user clicks "Test" and sees how Cortex would now route a sample query differently. Side-by-side before/after scoring. | June |
+| 33 | **Real-Time AI Impact Preview** | After editing a metric, user clicks "Test" and sees how Radix would now route a sample query differently. Side-by-side before/after scoring. | June |
 | 34 | **Synonym Sandbox** | Add/remove synonyms and see instant impact on retrieval similarity scores. "If I add 'total spend', does the AI now find this metric when someone says 'total spend'?" | May |
 | 35 | **Metric Coverage Dashboard** | Visual heatmap showing which metrics are fully enriched (description + synonyms + value catalog + required filters) vs. gaps. Highlights highest-traffic unindexed metrics. | June |
 | 36 | **Metric Lineage Graph** | Interactive visualization showing how a metric connects to its source table → LookML view → explore → other metrics that depend on it. Click any node to inspect. | June |
@@ -134,7 +134,7 @@ Interactive workspace where users define metrics, explore hierarchy, and see in 
 
 ## 4. Control Plane — "See everything about your data, in one place"
 
-Centralized dashboard for data governance leads and stewards to manage the metadata corpus that powers Cortex. Think of it as the "admin panel" for the AI's knowledge base.
+Centralized dashboard for data governance leads and stewards to manage the metadata corpus that powers Radix. Think of it as the "admin panel" for the AI's knowledge base.
 
 | # | Feature | Description | Target |
 |---|---------|-------------|--------|
@@ -143,7 +143,7 @@ Centralized dashboard for data governance leads and stewards to manage the metad
 | 41 | **Explore Health Scorecard** | Per-explore quality score: % fields with descriptions, % measures with synonyms, filter catalog coverage, graph connectivity, embedding freshness | June |
 | 42 | **Synonym Management** | CRUD interface for the synonym registry. Shows pending suggestions from learning loop, steward approval queue, auto-approved (Wilson score > 0.8). | May |
 | 43 | **Filter Catalog Manager** | View and edit known dimension values. See which values came from BQ log mining, steward entry, or user feedback. Flag conflicts. | May |
-| 44 | **Query Audit Trail** | Every Cortex query logged: what was asked, what was returned, confidence, which explore was chosen, latency, user feedback. Filterable by BU/user/time. | June |
+| 44 | **Query Audit Trail** | Every Radix query logged: what was asked, what was returned, confidence, which explore was chosen, latency, user feedback. Filterable by BU/user/time. | June |
 | 45 | **Governance Rules Engine** | Define mandatory filters (e.g., "Finance queries MUST include partition_date within 90 days"), auto-injection rules, cost budget limits per BU. | June |
 | 46 | **Enrichment Leaderboard** | Gamified view: which BUs have highest enrichment coverage, which stewards contributed most, which metrics are most queried but least enriched (priority gaps). | June |
 | 47 | **BU Onboarding Wizard** | Guided flow to onboard a new Business Unit: connect explores, run embedding pipeline, bootstrap filter catalog from BQ logs, assign steward. | June |
@@ -153,7 +153,7 @@ Centralized dashboard for data governance leads and stewards to manage the metad
 
 ## Delivery Summary
 
-| Month | Platform Foundation | Cortex Pipeline | Metric Playground | Control Plane | Lumi (Renuka) |
+| Month | Platform Foundation | Radix Pipeline | Metric Playground | Control Plane | Lumi (Renuka) |
 |-------|--------------------|--------------------|-------------------|---------------|---------------|
 | **March** | pgvector, AGE, embeddings, SafeChain, MCP, FastAPI (8 delivered) | Demo-ready (12 features) | Static/educational (4 tabs) | — | — |
 | **April** | — | Query execution, feedback loop | — | Architecture + wireframes | Steward UX MVP |
@@ -179,7 +179,7 @@ Centralized dashboard for data governance leads and stewards to manage the metad
 ## Dependencies Between Workstreams
 
 ```
-RENUKA (Lumi)                    SAHEB (Cortex)
+RENUKA (Lumi)                    SAHEB (Radix)
 ─────────────                    ──────────────
 Steward UX ──────→ Synonym Registry ──────→ Filter Resolution
                                               ↓
@@ -192,7 +192,7 @@ Quality Scoring ──────→ Enrichment Score ──→ Metric Playgrou
                                      Control Plane (reads all)
 ```
 
-**Critical path:** Lumi's synonym registry + dimension value catalog directly gate Cortex's filter resolution accuracy. If steward enrichment stalls, accuracy plateaus at ~85%. With enrichment, 95%+ is achievable.
+**Critical path:** Lumi's synonym registry + dimension value catalog directly gate Radix's filter resolution accuracy. If steward enrichment stalls, accuracy plateaus at ~85%. With enrichment, 95%+ is achievable.
 
 ---
 
@@ -200,7 +200,7 @@ Quality Scoring ──────→ Enrichment Score ──→ Metric Playgrou
 
 | Person | Primary Focus | Secondary |
 |--------|--------------|-----------|
-| **Saheb** | Architecture, Cortex orchestration, Control Plane design | Metric Playground spec |
+| **Saheb** | Architecture, Radix orchestration, Control Plane design | Metric Playground spec |
 | **Likhita** | Intent Classification hardening, multi-BU entity extraction | Learning loop implementation |
 | **Ravikanth** | Query execution pipeline, results processing, GKE deployment | Cost control gate |
 | **Ayush** | Metric Playground (live features), Control Plane UI | UI polish |
