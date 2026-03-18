@@ -7,15 +7,49 @@
 
 ## Overview
 
-Three product surfaces shipping by end of June 2026:
+Four layers shipping by end of June 2026:
 
-| Surface | What It Is | Primary User |
-|---------|-----------|-------------|
+| Layer | What It Is | Primary User |
+|-------|-----------|-------------|
+| **Platform Foundation** | Databases, embedding pipelines, auth, deployment infrastructure | Engineering team |
 | **Cortex AI Pipeline** | Natural language → SQL via semantic understanding | Finance analysts, BU leads |
 | **Metric Playground** | Interactive metric definition + real-time AI impact visualization | Data stewards, analysts, executives |
 | **Control Plane** | Centralized metadata corpus management + governance dashboard | Data stewards, data governance leads |
 
 Plus **Semantic Enrichment (Lumi)** — Renuka's workstream feeding metadata into all three.
+
+---
+
+## 0. Platform Foundation — Infrastructure That Powers Everything
+
+Before any feature works, these foundational layers must exist. Most are delivered or in progress.
+
+### 0.1 Data Infrastructure (Delivered)
+
+| # | Component | Description | Status |
+|---|-----------|-------------|--------|
+| F1 | **PostgreSQL + pgvector** | Vector database for field-level embeddings (1024-dim BGE-large). Stores `field_embeddings` table with cosine similarity search. Single instance serves both vector search and relational storage. | Delivered |
+| F2 | **Apache AGE Graph Database** | LookML structural graph — Model → Explore → View → Field nodes with join relationships. Powers structural validation ("are all matched fields reachable from a single explore?") and partition filter discovery. | Delivered |
+| F3 | **LookML Parser + Graph Ingestion** | Parses `.view.lkml` and `.explore.lkml` files → loads into AGE graph. Creates Field nodes with type, description, sql expression. Refreshed on every LookML deploy. | Delivered |
+| F4 | **Embedding Pipeline (BGE-large)** | Generates 1024-dim embeddings for every measure and dimension across all indexed explores. Uses BGE-large with query/document prefix distinction. Batch-loadable for new BU onboarding. | Delivered |
+| F5 | **Filter Catalog Generation** | Auto-derives known dimension values from LookML parse → `filter_catalog.json`. Includes value_map, synonyms, yesno_dimensions, partition_fields per explore. | Delivered |
+| F6 | **SafeChain / CIBIS Gateway** | All LLM calls (Gemini Flash) and embedding calls (text-embedding-005) route through Amex's SafeChain gateway. Handles auth, audit logging, model routing. Integrated at module level. | Delivered |
+| F7 | **MCP Toolbox Sidecar** | Looker MCP server running as sidecar container. Exposes 33 Looker tools (query-sql, get-explore, list-fields, etc.) via Model Context Protocol. Cortex API calls MCP for deterministic SQL generation. | Delivered |
+| F8 | **FastAPI Server + SSE Streaming** | Production API server with streaming Server-Sent Events. Endpoints: `/query`, `/trace`, `/feedback`, `/capabilities`, `/health`. CORS-ready for ChatGPT Enterprise frontend. | Delivered |
+
+### 0.2 Platform Infrastructure (Shipping May–June)
+
+| # | Component | Description | Target |
+|---|-----------|-------------|--------|
+| F9 | **GKE Deployment Architecture** | Cortex API + MCP sidecar as GKE pod. Auto-scaling, health probes, config volumes, secret management. Production-grade container orchestration. | June |
+| F10 | **LookML Auto-Generation Pipeline** | Enrichment metadata (from Lumi) → auto-generates LookML view definitions with descriptions, labels, required_filters, synonyms. Git-based workflow: generate → PR → review → merge → graph refresh. | June |
+| F11 | **Embedding Refresh Pipeline** | Scheduled job to re-embed fields when LookML changes. Detects new/modified fields, generates embeddings, updates pgvector. Ensures vector index stays current with semantic layer. | May |
+| F12 | **BQ Log Mining Pipeline** | ETL job that scans 180 days of BigQuery query logs (INFORMATION_SCHEMA.JOBS). Extracts dimension value patterns from WHERE clauses to bootstrap filter catalog for new BUs. | May |
+| F13 | **Golden Dataset Infrastructure** | Evaluation pipeline: 150+ verified query patterns (50/BU), stratified by complexity. Automated regression testing on every pipeline change. Tracks intent accuracy, retrieval precision, filter accuracy, E2E correctness. | May |
+| F14 | **FAISS Index Build Pipeline** | Batch job to embed golden queries → build IVF index (256 centroids) for few-shot matching. Rebuilt on golden dataset expansion. Loaded at server startup. | May |
+| F15 | **Observability Stack** | Structured logging (per-step timing, LLM call counts, confidence scores), trace persistence in PostgreSQL, health check endpoints with component-level status (pgvector, AGE, SafeChain, MCP). | May |
+| F16 | **CI/CD Pipeline** | GitHub Actions: lint → type-check → unit tests → golden dataset regression → container build → staging deploy. PR-gated with accuracy regression checks. | June |
+| F17 | **Redis Conversation Store** | Replace in-memory conversation state with Redis. Enables horizontal scaling (multiple API pods) and session persistence across deploys. | June |
 
 ---
 
@@ -119,12 +153,12 @@ Centralized dashboard for data governance leads and stewards to manage the metad
 
 ## Delivery Summary
 
-| Month | Cortex Pipeline | Metric Playground | Control Plane | Lumi (Renuka) |
-|-------|----------------|-------------------|---------------|---------------|
-| **March** | Demo-ready (12 features) | Static/educational (4 tabs) | — | — |
-| **April** | Query execution, feedback loop | — | Architecture + wireframes | Steward UX MVP |
-| **May** | Learning loop, few-shot, SafeChain fix, embedding filter resolution | Live editor, synonym sandbox, diff view | Corpus overview, field detail, synonym mgmt, filter catalog | Synonym registry, value catalog, BQ log import |
-| **June** | Multi-BU (3 BUs), cost control, GKE production | AI impact preview, coverage dashboard, lineage graph, what-if mode | Explore health, audit trail, governance rules, onboarding wizard, alerts | LookML auto-generation, quality scoring |
+| Month | Platform Foundation | Cortex Pipeline | Metric Playground | Control Plane | Lumi (Renuka) |
+|-------|--------------------|--------------------|-------------------|---------------|---------------|
+| **March** | pgvector, AGE, embeddings, SafeChain, MCP, FastAPI (8 delivered) | Demo-ready (12 features) | Static/educational (4 tabs) | — | — |
+| **April** | — | Query execution, feedback loop | — | Architecture + wireframes | Steward UX MVP |
+| **May** | Embedding refresh, BQ log mining, golden dataset infra, FAISS build, observability | Learning loop, few-shot, SafeChain fix, embedding filter resolution | Live editor, synonym sandbox, diff view | Corpus overview, field detail, synonym mgmt, filter catalog | Synonym registry, value catalog, BQ log import |
+| **June** | GKE deploy, LookML auto-gen, CI/CD, Redis conversation store | Multi-BU (3 BUs), cost control | AI impact preview, coverage dashboard, lineage graph, what-if mode | Explore health, audit trail, governance rules, onboarding wizard, alerts | LookML auto-generation, quality scoring |
 
 ---
 
@@ -175,4 +209,4 @@ Quality Scoring ──────→ Enrichment Score ──→ Metric Playgrou
 
 ---
 
-*48 features across 4 surfaces. 12 delivered today. 36 shipping May–June.*
+*65 items across 5 layers. 20 delivered today (8 foundation + 12 pipeline). 45 shipping May–June.*
