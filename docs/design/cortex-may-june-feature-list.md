@@ -48,7 +48,7 @@
 
 ---
 
-## Semantic Enrichment — Lumi (Renuka)
+## Data Marketplace (Renuka)
 
 *Metadata enrichment that feeds the AI pipeline, Looker, and the Control Plane*
 
