@@ -16,11 +16,11 @@ sources:
     timeout: 120s
 
 # Toolsets group tools for different use cases.
-# Cortex uses "data-exploration" for the core pipeline.
+# Radix uses "data-exploration" for the core pipeline.
 # Other toolsets are available for debugging and development.
 
 toolsets:
-  # Core tools for data exploration and querying (used by Cortex pipeline)
+  # Core tools for data exploration and querying (used by Radix pipeline)
   data-exploration:
     - get-models
     - get-explores

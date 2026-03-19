@@ -16,9 +16,9 @@ export interface ProcessingIndicatorProps {
   exploreName?: string;
 }
 
-/* ── Keyframe injection (once) ───────────────────────── */
+/* ── Keyframe injection ──────────────────────────────── */
 
-const KEYFRAME_ID = 'cortex-processing-indicator-keyframes';
+const KEYFRAME_ID = 'radix-processing-indicator-keyframes';
 
 function ensureKeyframes(): void {
   if (typeof document === 'undefined') return;
@@ -26,11 +26,11 @@ function ensureKeyframes(): void {
   const style = document.createElement('style');
   style.id = KEYFRAME_ID;
   style.textContent = `
-    @keyframes cortexFadeIn {
+    @keyframes radixFadeIn {
       from { opacity: 0; transform: translateY(4px); }
       to { opacity: 1; transform: translateY(0); }
     }
-    @keyframes cortexTextFadeIn {
+    @keyframes radixTextFadeIn {
       from { opacity: 0; }
       to { opacity: 1; }
     }
@@ -38,7 +38,7 @@ function ensureKeyframes(): void {
   document.head.appendChild(style);
 }
 
-/* ── Filter pass → color ─────────────────────────────── */
+/* ── Filter pass badge colors ────────────────────────── */
 
 function filterPassColor(pass: string): string {
   switch (pass) {
@@ -99,7 +99,6 @@ const ProcessingIndicator: React.FC<ProcessingIndicatorProps> = ({
 
   const phase = detectPhase(steps);
 
-  // Trigger re-animation on phase change
   useEffect(() => {
     if (phase !== prevPhaseRef.current) {
       prevPhaseRef.current = phase;
@@ -113,10 +112,8 @@ const ProcessingIndicator: React.FC<ProcessingIndicatorProps> = ({
   const filterComplete = stepStatus(steps, 'filter_resolution') === 'complete';
   const showFilters = (filterActive || filterComplete) && filters.resolved.length > 0;
 
-  /* Primary metric name for parameterized text */
   const primaryMetric = entities?.metrics?.[0] ?? null;
 
-  /* ── Phase text ────────────── */
   let messageText: string;
   let subMessage: string | null = null;
 
@@ -139,7 +136,6 @@ const ProcessingIndicator: React.FC<ProcessingIndicatorProps> = ({
       break;
   }
 
-  /* ── Entity chips (inline after Phase 1 completion) ── */
   const showEntityChips = phase === 1 && intentComplete && entities;
   const entityChips: { label: string; color: string }[] = [];
   if (showEntityChips && entities) {
@@ -153,7 +149,6 @@ const ProcessingIndicator: React.FC<ProcessingIndicatorProps> = ({
     <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
       <RadixMark size={32} animated />
       <div style={{ flex: 1, minWidth: 0, paddingTop: 4 }}>
-        {/* Primary message */}
         <div
           key={`msg-${textKey}`}
           style={{
@@ -161,7 +156,7 @@ const ProcessingIndicator: React.FC<ProcessingIndicatorProps> = ({
             flexWrap: 'wrap',
             alignItems: 'center',
             gap: 8,
-            animation: 'cortexTextFadeIn 250ms ease forwards',
+            animation: 'radixTextFadeIn 250ms ease forwards',
           }}
         >
           <span
@@ -175,7 +170,6 @@ const ProcessingIndicator: React.FC<ProcessingIndicatorProps> = ({
             {messageText}
           </span>
 
-          {/* Inline entity chips after intent completes in Phase 1 */}
           {showEntityChips && entityChips.length > 0 && entityChips.map((chip, i) => (
             <span
               key={`chip-${i}`}
@@ -195,7 +189,6 @@ const ProcessingIndicator: React.FC<ProcessingIndicatorProps> = ({
           ))}
         </div>
 
-        {/* Sub-message (e.g. "Found relevant data in ...") */}
         {subMessage && (
           <div
             key={`sub-${subMessage}`}
@@ -205,14 +198,13 @@ const ProcessingIndicator: React.FC<ProcessingIndicatorProps> = ({
               fontWeight: 500,
               color: colors.success,
               fontFamily: typography.fontPrimary,
-              animation: 'cortexTextFadeIn 250ms ease forwards',
+              animation: 'radixTextFadeIn 250ms ease forwards',
             }}
           >
             {subMessage}
           </div>
         )}
 
-        {/* Filter translation sub-display */}
         {showFilters && (
           <div style={{ marginTop: 10, paddingLeft: 2 }}>
             <span
@@ -236,7 +228,7 @@ const ProcessingIndicator: React.FC<ProcessingIndicatorProps> = ({
                   gap: 8,
                   marginBottom: 4,
                   paddingLeft: 12,
-                  animation: `cortexFadeIn 200ms ease ${i * 80}ms forwards`,
+                  animation: `radixFadeIn 200ms ease ${i * 80}ms forwards`,
                   opacity: 0,
                 }}
               >

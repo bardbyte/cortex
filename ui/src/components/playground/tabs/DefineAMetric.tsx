@@ -65,7 +65,7 @@ function PathCard({ pathNumber, children }: { pathNumber: number; children: Reac
   );
 }
 
-/* ──────── Path 1: From SQL ──────── */
+/* ── Path 1: From SQL ── */
 function FromSQL() {
   const [extracted, setExtracted] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -146,7 +146,7 @@ function FromSQL() {
   );
 }
 
-/* ──────── Path 2: From Business Knowledge ──────── */
+/* ── Path 2: From Business Knowledge ── */
 function FromBusiness() {
   const [synonyms, setSynonyms] = useState(BUSINESS_FORM_DEFAULTS.synonyms);
   const [newSynonym, setNewSynonym] = useState('');
@@ -186,7 +186,6 @@ function FromBusiness() {
         </div>
       ))}
 
-      {/* Synonym tags */}
       <div>
         <div style={labelStyle}>Synonyms</div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '8px' }}>
@@ -258,7 +257,7 @@ function FromBusiness() {
   );
 }
 
-/* ──────── Path 3: Enhance Existing ──────── */
+/* ── Path 3: Enhance Existing ── */
 function EnhanceExisting() {
   const [enhanced, setEnhanced] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -335,14 +334,14 @@ function EnhanceExisting() {
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
             <path d="M3 8L7 12L13 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
-          Enrichment Approved — Ready for Cortex
+          Enrichment Approved — Ready for Radix
         </div>
       )}
     </>
   );
 }
 
-/* ──────── Main Tab ──────── */
+/* ── Main Tab ── */
 export default function DefineAMetric() {
   return (
     <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>

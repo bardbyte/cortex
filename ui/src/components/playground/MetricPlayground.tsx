@@ -108,7 +108,7 @@ export default function MetricPlayground({ onBack }: MetricPlaygroundProps) {
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
             <path d="M9 3L5 7L9 11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
-          Back to Cortex
+          Back to Radix
         </button>
         {TABS.map((tab) => (
           <button
@@ -134,7 +134,7 @@ export default function MetricPlayground({ onBack }: MetricPlaygroundProps) {
         </div>
       </div>
 
-      {/* Global animations */}
+      {/* Shared keyframe animations for child tabs */}
       <style>{`
         @keyframes layerShimmer {
           0% { background-color: var(--color-surface-primary, #FFFFFF); }

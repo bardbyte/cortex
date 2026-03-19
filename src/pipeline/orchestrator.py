@@ -1,8 +1,8 @@
-"""CortexOrchestrator — full NL2SQL pipeline with SSE streaming.
+"""RadixOrchestrator — full NL2SQL pipeline with SSE streaming.
 
 Composition over inheritance: wraps the PoC's AgentOrchestrator (access_llm/chat.py),
 does NOT subclass it. Phase 1 (pre-processing) and Phase 3 (post-processing)
-are owned by CortexOrchestrator. Phase 2 (ReAct execution) delegates to the
+are owned by RadixOrchestrator. Phase 2 (ReAct execution) delegates to the
 PoC's AgentOrchestrator with an augmented prompt.
 
 Three phases:
@@ -33,7 +33,7 @@ Cosmetic note:
   Post-demo: break retrieval into composable functions.
 
 Usage:
-    orchestrator = CortexOrchestrator(react_agent, conversations)
+    orchestrator = RadixOrchestrator(react_agent, conversations)
     async for event in orchestrator.process_query("total spend?", "conv_123"):
         yield event.to_sse()
 """
@@ -72,11 +72,11 @@ logger = logging.getLogger(__name__)
 @dataclass
 class SSEEvent:
     """A single Server-Sent Event."""
-    event: str              # event type: step_start, step_complete, etc.
-    data: dict[str, Any]    # JSON-serializable payload
+    event: str
+    data: dict[str, Any]
 
     def to_sse(self) -> str:
-        """Serialize to SSE wire format (single-line JSON per spec)."""
+        """Serialize to SSE wire format."""
         json_data = json.dumps(self.data, default=str)
         return f"event: {self.event}\ndata: {json_data}\n\n"
 
@@ -85,32 +85,32 @@ class SSEEvent:
 
 @dataclass
 class StepTrace:
-    """Trace of a single pipeline step — stored for eval and debugging."""
+    """Trace of a single pipeline step for eval and debugging."""
     step_name: str
     step_number: int
     started_at: float
     ended_at: float = 0.0
     duration_ms: float = 0.0
-    status: str = "pending"          # pending | active | complete | error | skipped
+    status: str = "pending"
     input_summary: dict = field(default_factory=dict)
     output_summary: dict = field(default_factory=dict)
-    decision: str = "pending"        # proceed | disambiguate | clarify | fallback | skip
+    decision: str = "pending"
     confidence: float | None = None
     error: str | None = None
 
 
 @dataclass
 class PipelineTrace:
-    """Full pipeline trace for one query — stored for eval and debugging."""
+    """Full pipeline trace for one query."""
     trace_id: str
     query: str
     conversation_id: str
-    timestamp: str                    # ISO 8601
+    timestamp: str
     total_duration_ms: float = 0.0
     llm_calls: int = 0
     mcp_calls: int = 0
     overall_confidence: float = 0.0
-    action: str = "pending"           # proceed | disambiguate | clarify | fallback
+    action: str = "pending"
     steps: list[StepTrace] = field(default_factory=list)
     result: dict = field(default_factory=dict)
 
@@ -124,7 +124,7 @@ class PipelineTrace:
 class ConversationContext:
     """Context carried across turns in a conversation."""
     conversation_id: str
-    history: list[dict]                             # [{role, content}]
+    history: list[dict]
     last_retrieval_result: PipelineResult | None = None
     last_explore: str = ""
     last_filters: dict = field(default_factory=dict)
@@ -156,11 +156,11 @@ class ConversationStore:
 
 # ── Orchestrator ─────────────────────────────────────────────────────
 
-class CortexOrchestrator:
+class RadixOrchestrator:
     """Full NL2SQL pipeline with SSE streaming.
 
     Usage:
-        orchestrator = CortexOrchestrator(react_agent, conversations)
+        orchestrator = RadixOrchestrator(react_agent, conversations)
         async for event in orchestrator.process_query("total spend?", "conv_123"):
             yield event.to_sse()
     """
@@ -179,28 +179,13 @@ class CortexOrchestrator:
         self.model_name = model_name
         self._trace_store: dict[str, PipelineTrace] = {}
 
-        # ── Singleton model clients — created once, reused across ALL requests ──
-        # get_model() hits SafeChain Config.from_env() on first call, then caches.
-        # But model() may create a new wrapper each time. By caching here, we ensure
-        # zero per-request initialization overhead.
+        # Cache model clients at init to avoid per-request SafeChain overhead (~50ms)
         self._classifier = get_model(classifier_model_idx)
-
-        # Singleton EntityExtractor — holds both LLM + embedding clients.
-        # Without this, every request creates new model clients (~50ms waste).
         self._extractor = EntityExtractor()
 
     async def warm_up(self) -> None:
-        """Pre-warm caches so the first request doesn't pay cold-start penalties.
-
-        Triggers:
-          - Explore description embedding cache (one-time ~200ms)
-          - pgvector connection pool warm-up
-
-        Call this from the server startup handler AFTER __init__.
-        """
+        """Pre-warm embedding caches and connection pools. Call after __init__."""
         logger.info("Pre-warming explore description embeddings...")
-        # _get_explore_desc_similarities triggers the one-time cache.
-        # Run in thread to avoid blocking the event loop.
         await asyncio.to_thread(
             _get_explore_desc_similarities, "warm-up query", self._extractor
         )
@@ -227,8 +212,6 @@ class CortexOrchestrator:
 
         try:
             # ── PHASE 1: PRE-PROCESSING ──────────────────────────
-
-            # Step 1: Intent Classification + Entity Extraction
             step1_start = time.monotonic()
             yield SSEEvent("step_start", {
                 "step": "intent_classification",
@@ -261,7 +244,6 @@ class CortexOrchestrator:
                 "detail": classification,
             })
 
-            # Short-circuit: out of scope
             if classification.get("intent") == "out_of_scope":
                 trace.action = "out_of_scope"
                 trace.total_duration_ms = (time.monotonic() - pipeline_start) * 1000
@@ -275,10 +257,7 @@ class CortexOrchestrator:
                 })
                 return
 
-            # Map classifier entities → ExtractedEntities for retrieval pipeline.
-            # This eliminates the second LLM call (~300ms saved per query).
-            # The classifier already extracts {metrics, dimensions, filters, time_range}
-            # in the same format the retrieval extractor would produce.
+            # Reuse classifier entities for retrieval — avoids a second LLM call (~300ms)
             entities_data = classification.get("entities", {})
             pre_extracted = ExtractedEntities(
                 measures=entities_data.get("metrics", []),
@@ -287,7 +266,6 @@ class CortexOrchestrator:
                 filters=entities_data.get("filters", []),
             )
 
-            # Emit extracted entities so the frontend can show entity chips
             yield SSEEvent("entities_extracted", {
                 "intent": classification.get("intent", ""),
                 "metrics": entities_data.get("metrics", []),
@@ -296,7 +274,6 @@ class CortexOrchestrator:
                 "time_range": entities_data.get("time_range"),
             })
 
-            # Step 2: Retrieval (embedding + pgvector + graph scoring)
             step2_start = time.monotonic()
             yield SSEEvent("step_start", {
                 "step": "retrieval",
@@ -305,8 +282,8 @@ class CortexOrchestrator:
                 "message": "Searching for matching data fields...",
             })
 
-            # CRITICAL: run in thread — this is synchronous (embedding + pgvector + graph)
-            # and would block the event loop, freezing all concurrent SSE streams.
+            # Sync retrieval (embedding + pgvector + graph) — must run in thread
+            # to avoid blocking concurrent SSE streams
             pipeline_result = await asyncio.to_thread(
                 retrieve_with_graph_validation, query, 5,
                 pre_extracted=pre_extracted,
@@ -350,7 +327,6 @@ class CortexOrchestrator:
                 },
             })
 
-            # Handle clarify / no_match
             if pipeline_result.action in ("clarify", "no_match"):
                 trace.action = pipeline_result.action
                 trace.total_duration_ms = (time.monotonic() - pipeline_start) * 1000
@@ -376,7 +352,8 @@ class CortexOrchestrator:
                     })
                 return
 
-            # Step 3: Explore Scoring (already computed in retrieval — emit results)
+            # Scoring already computed in retrieval — re-emit as separate SSE events
+            # for the frontend's step visualization
             step3_start = time.monotonic()
             yield SSEEvent("step_start", {
                 "step": "explore_scoring",
@@ -407,7 +384,6 @@ class CortexOrchestrator:
                 "is_near_miss": pipeline_result.explores[0].is_near_miss if pipeline_result.explores else False,
             })
 
-            # Handle disambiguation
             if pipeline_result.action == "disambiguate":
                 options = []
                 for exp_info in explore_list[:2]:
@@ -454,7 +430,6 @@ class CortexOrchestrator:
                 "detail": top_explore_data,
             })
 
-            # Step 4: Filter Resolution (already done in retrieval — emit detail)
             step4_start = time.monotonic()
             yield SSEEvent("step_start", {
                 "step": "filter_resolution",
@@ -509,7 +484,6 @@ class CortexOrchestrator:
                 "detail": filter_detail,
             })
 
-            # Emit filter_resolved so the frontend can show filter translation UI
             _PASS_NAMES = {1: "exact", 2: "synonym", 3: "fuzzy", 4: "semantic", 5: "llm"}
             resolved_for_ui = [
                 {
@@ -534,14 +508,12 @@ class CortexOrchestrator:
                 "mandatory": mandatory_for_ui,
             })
 
-            # Save retrieval context for follow-ups
             ctx.last_retrieval_result = pipeline_result
             ctx.last_explore = top_explore_data.get("top_explore_name", "")
             ctx.last_filters = filters_data
 
             # ── PHASE 2: REACT EXECUTION ─────────────────────────
 
-            # Step 5: SQL Generation via Looker MCP
             step5_start = time.monotonic()
             yield SSEEvent("step_start", {
                 "step": "sql_generation",
@@ -550,7 +522,6 @@ class CortexOrchestrator:
                 "message": "Generating SQL query...",
             })
 
-            # Build augmented prompt with pre-selected fields
             explore_name = top_explore_data.get("top_explore_name", "")
             measures, dimensions = self._extract_fields_from_entities(
                 pipeline_result.entities or [], explore_name
@@ -578,7 +549,7 @@ class CortexOrchestrator:
 
             messages = [
                 {"role": "system", "content": augmented_prompt},
-                *ctx.history[-10:],  # last 5 turns
+                *ctx.history[-10:],
                 {"role": "user", "content": query},
             ]
 
@@ -619,19 +590,14 @@ class CortexOrchestrator:
             })
 
             # ── PHASE 3: POST-PROCESSING ─────────────────────────
-            # Latency optimization: extract answer immediately (regex, <1ms),
-            # then fire follow-up generation concurrently with results processing.
-            # Follow-ups need the answer but NOT the parsed results — independent.
 
             answer = self._extract_answer(raw_content)
 
-            # Fire follow-up generation NOW — runs concurrently with Step 6.
-            # This LLM call (~300ms) overlaps with result parsing + event emission.
+            # Follow-up generation runs concurrently with Step 6 (~300ms overlap)
             follow_up_task = asyncio.create_task(
                 self._generate_follow_ups(query, answer, explore_name, ctx)
             )
 
-            # Step 6: Results Processing
             step6_start = time.monotonic()
             yield SSEEvent("step_start", {
                 "step": "results_processing",
@@ -668,7 +634,6 @@ class CortexOrchestrator:
                 "message": f"Processed {row_count} rows",
             })
 
-            # Step 7: Response Formatting + Follow-ups
             step7_start = time.monotonic()
             yield SSEEvent("step_start", {
                 "step": "response_formatting",
@@ -677,7 +642,6 @@ class CortexOrchestrator:
                 "message": "Formatting response...",
             })
 
-            # Await the follow-up task (already running since before Step 6)
             follow_ups = await follow_up_task
             llm_calls += 1
             step7_duration = (time.monotonic() - step7_start) * 1000
@@ -737,11 +701,10 @@ class CortexOrchestrator:
             })
 
         except BaseException as e:
+            # BaseException catches ExceptionGroup (3.11+) so SSE stream closes cleanly
             logger.exception("Pipeline error for query: %s", query)
-            # ExceptionGroup (Python 3.11+) escapes `except Exception`.
-            # Catch BaseException so the SSE stream always closes cleanly.
             error_msg = str(e)
-            if hasattr(e, 'exceptions'):  # ExceptionGroup
+            if hasattr(e, 'exceptions'):
                 error_msg = "; ".join(str(sub) for sub in e.exceptions)
             yield SSEEvent("error", {
                 "step": "pipeline",
@@ -757,7 +720,6 @@ class CortexOrchestrator:
             })
 
     def get_trace(self, trace_id: str) -> PipelineTrace | None:
-        """Retrieve a stored trace by ID."""
         return self._trace_store.get(trace_id)
 
     # ── Private Methods ──────────────────────────────────────────
@@ -771,7 +733,7 @@ class CortexOrchestrator:
         )
         history_text = ""
         if ctx.history:
-            recent = ctx.history[-6:]  # last 3 turns
+            recent = ctx.history[-6:]
             history_text = "\n".join(
                 f"{msg['role']}: {msg['content'][:200]}" for msg in recent
             )
@@ -785,8 +747,6 @@ class CortexOrchestrator:
         )
 
         try:
-            # CRITICAL: classifier.invoke() is synchronous — run in thread
-            # to avoid blocking the event loop during SSE streaming.
             response = await asyncio.to_thread(self._classifier.invoke, prompt)
             json_str = response.content if hasattr(response, "content") else str(response)
             cleaned = self._extract_json_block(json_str)
@@ -809,7 +769,7 @@ class CortexOrchestrator:
         dimensions: list[str],
         filters: dict[str, str],
     ) -> str:
-        """Build the augmented system prompt for the ReAct agent."""
+        """Build the augmented system prompt with pre-selected fields for the ReAct agent."""
         measures_list = "\n".join(f"  - {m}" for m in measures) or "  (none)"
         dimensions_list = "\n".join(f"  - {d}" for d in dimensions) or "  (none)"
         filters_list = "\n".join(
@@ -836,10 +796,8 @@ class CortexOrchestrator:
     ) -> tuple[list[str], list[str]]:
         """Extract measure/dimension field keys from scored entities for an explore.
 
-        BUG FIX: The explore field in candidates is comma-separated
-        (e.g. "finance_cardmember_360,finance_merchant_profitability").
-        Must split and do exact match — substring match would cause
-        "finance_card" to match "finance_cardmember_360".
+        The explore field in candidates is comma-separated — must split and
+        exact-match to avoid substring collisions across explore names.
         """
         measures = []
         dimensions = []
@@ -852,7 +810,6 @@ class CortexOrchestrator:
             candidates = entity.get("candidates", [])
             for candidate in candidates:
                 candidate_explores_str = candidate.get("explore", "")
-                # Split comma-separated explore names and exact-match
                 candidate_explores = [
                     e.strip() for e in candidate_explores_str.split(",") if e.strip()
                 ]
@@ -869,7 +826,6 @@ class CortexOrchestrator:
 
     def _extract_sql(self, raw_content: str) -> str:
         """Extract SQL from the raw LLM response."""
-        # Look for SQL in markdown code blocks
         sql_match = re.search(
             r"```(?:sql)?\s*\n(.*?)\n```",
             raw_content,
@@ -878,7 +834,6 @@ class CortexOrchestrator:
         if sql_match:
             return sql_match.group(1).strip()
 
-        # Look for SELECT statement directly
         select_match = re.search(
             r"(SELECT\s+.*?(?:;|\Z))",
             raw_content,
@@ -892,13 +847,11 @@ class CortexOrchestrator:
     def _parse_results(self, raw_content: str) -> dict:
         """Parse query results from LLM response into structured data.
 
-        The MCP tool returns results as formatted text. We extract what we can.
+        MCP returns results as formatted text — extract JSON if present, else fallback.
         """
-        # Try to find a table or JSON results block in the response
         rows = []
         columns = []
 
-        # Look for JSON data
         json_match = re.search(r"\[[\s\S]*?\{[\s\S]*?\}[\s\S]*?\]", raw_content)
         if json_match:
             try:
@@ -913,7 +866,6 @@ class CortexOrchestrator:
             except json.JSONDecodeError:
                 pass
 
-        # Fallback: treat the raw content as the result
         return {
             "columns": [{"name": "result", "type": "string", "label": "Result"}],
             "rows": [{"result": raw_content[:2000]}],
@@ -921,15 +873,9 @@ class CortexOrchestrator:
         }
 
     def _extract_answer(self, raw_content: str) -> str:
-        """Extract the natural language answer from LLM response.
-
-        Removes SQL blocks and tool call artifacts, keeps the human-readable part.
-        """
-        # Remove code blocks
+        """Strip SQL blocks and tool call artifacts, return the human-readable answer."""
         cleaned = re.sub(r"```(?:sql|json)?.*?```", "", raw_content, flags=re.DOTALL)
-        # Remove tool call references
         cleaned = re.sub(r"\[Tool.*?\]", "", cleaned)
-        # Clean up whitespace
         cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
         return cleaned or raw_content[:500]
 
@@ -949,7 +895,6 @@ class CortexOrchestrator:
                 available_dimensions="(see explore description)",
                 available_measures="(see explore description)",
             )
-            # CRITICAL: run in thread — same sync invoke issue.
             response = await asyncio.to_thread(self._classifier.invoke, prompt)
             json_str = response.content if hasattr(response, "content") else str(response)
             cleaned = self._extract_json_block(json_str)
@@ -959,7 +904,6 @@ class CortexOrchestrator:
         except Exception as e:
             logger.warning("Follow-up generation failed: %s", e)
 
-        # Fallback suggestions
         return [
             f"Break that down by another dimension",
             f"Show the trend over time",
@@ -968,7 +912,7 @@ class CortexOrchestrator:
 
     @staticmethod
     def _extract_json_block(text: str) -> str:
-        """Extract JSON from potential markdown fences."""
+        """Extract JSON object or array from markdown-fenced or raw text."""
         text = text.strip()
         if "```" in text:
             parts = text.split("```")

@@ -1,18 +1,14 @@
-"""Prompt templates for the Cortex NL2SQL pipeline.
+"""Prompt templates for the Radix NL2SQL pipeline.
 
 Two key prompts:
   1. CLASSIFY_AND_EXTRACT — Single LLM call for intent + entity extraction (Phase 1)
   2. AUGMENTED_SYSTEM — System prompt for ReAct agent with pre-selected fields (Phase 2)
-
-All prompts are f-string templates. Variables are injected at call time.
 """
 
 # ── Intent Classification + Entity Extraction ────────────────────────
-# Single Gemini Flash call. Replaces separate classifier + entity extractor
-# for latency efficiency (1 call vs 2).
 
 CLASSIFY_AND_EXTRACT_PROMPT = """\
-You are Cortex, an expert data analyst for American Express. Given a user question \
+You are Radix, an expert data analyst for American Express. Given a user question \
 and conversation history, classify the intent and extract structured entities.
 
 ## Intent Types
@@ -70,11 +66,9 @@ User question: {query}
 
 
 # ── Augmented System Prompt for ReAct Agent ──────────────────────────
-# Injected into Phase 2 to constrain the LLM's tool usage.
-# Pre-selected fields reduce hallucination and cut LLM iterations from 5-6 to 1-2.
 
 AUGMENTED_SYSTEM_PROMPT = """\
-You are Cortex, a data analyst assistant for American Express Finance. \
+You are Radix, a data analyst assistant for American Express Finance. \
 You have access to Looker tools to query data.
 
 ## Pre-Selected Context (from retrieval pipeline)

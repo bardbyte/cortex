@@ -57,7 +57,6 @@ export default function WhatIsAMetric() {
     marginTop: '8px',
   };
 
-  // JSON rendering with highlighted sections
   const renderEnrichedJSON = () => {
     const lines = JSON.stringify(ENRICHED_JSON, null, 2).split('\n');
     const synonymStart = lines.findIndex((l) => l.includes('"synonyms"'));
@@ -92,7 +91,7 @@ export default function WhatIsAMetric() {
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <div style={{ width: '3px', height: '14px', background: '#008767', borderRadius: '2px' }} />
             <span style={{ fontSize: '12px', color: '#008767', fontFamily: typography.fontPrimary }}>
-              These synonyms are the vocabulary Cortex searches.
+              These synonyms are the vocabulary Radix searches.
             </span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -108,7 +107,6 @@ export default function WhatIsAMetric() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
-      {/* Layer 01 — Raw Column */}
       <LayerCard
         layerNumber={1}
         title="Raw Column"
@@ -146,7 +144,6 @@ export default function WhatIsAMetric() {
 
       <ConnectingArrow pulse={activeLayer === 1} />
 
-      {/* Layer 02 — Metric Definition */}
       <LayerCard
         layerNumber={2}
         title="Metric Definition"
@@ -177,11 +174,10 @@ export default function WhatIsAMetric() {
 
       <ConnectingArrow pulse={activeLayer === 2} />
 
-      {/* Layer 03 — Enriched Definition */}
       <LayerCard
         layerNumber={3}
         title="Enriched Definition"
-        subtitle="How Cortex understands it"
+        subtitle="How Radix understands it"
         tooltip={LAYER_TOOLTIPS.layer3}
         onActivate={() => setActiveLayer(3)}
         isActive={activeLayer === 3}

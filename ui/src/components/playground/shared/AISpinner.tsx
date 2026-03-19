@@ -35,7 +35,7 @@ export default function AISpinner() {
           strokeLinecap="round"
         />
       </svg>
-      <span style={labelStyle}>Analyzing with Cortex AI...</span>
+      <span style={labelStyle}>Analyzing with Radix AI...</span>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );

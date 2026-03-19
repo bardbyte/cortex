@@ -1,4 +1,4 @@
-/** Tab 4 — "How the AI Uses It" pipeline trace data */
+/** Mock data for the "How the AI Uses It" pipeline trace tab */
 
 export const TRACE_QUERY = 'total spend by generation';
 
@@ -78,5 +78,5 @@ export const NO_ENRICHMENT_CALLOUT = {
   without_score: 0.41,
   threshold: 0.85,
   fallback_response: "I couldn't find a metric matching 'total spend'. Did you mean: net_revenue, spend_volume_mtd, or total_transaction_amount?",
-  punchline: 'Without enrichment, Cortex is a very expensive keyword search.',
+  punchline: 'Without enrichment, Radix is a very expensive keyword search.',
 };

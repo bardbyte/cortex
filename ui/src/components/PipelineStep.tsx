@@ -57,7 +57,7 @@ function ensureKeyframes(): void {
   const style = document.createElement('style');
   style.id = STYLE_ID;
   style.textContent = `
-    @keyframes cortex-spin {
+    @keyframes radix-spin {
       0%   { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
     }
@@ -91,7 +91,6 @@ const StepIndicator: React.FC<{ status: PipelineStepType['status'] }> = ({ statu
     case 'active':
       return (
         <div style={{ ...base, backgroundColor: colors.stepActive }}>
-          {/* Spinning ring */}
           <div
             style={{
               position: 'absolute',
@@ -99,10 +98,9 @@ const StepIndicator: React.FC<{ status: PipelineStepType['status'] }> = ({ statu
               borderRadius: '50%',
               border: `2px solid transparent`,
               borderTopColor: colors.stepActive,
-              animation: 'cortex-spin 0.8s linear infinite',
+              animation: 'radix-spin 0.8s linear infinite',
             }}
           />
-          {/* Inner dot */}
           <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: colors.amexWhite }} />
         </div>
       );
@@ -342,8 +340,7 @@ function renderExploreScoring(detail: Record<string, unknown>): React.ReactNode 
 }
 
 function renderFilterResolution(detail: Record<string, unknown>): React.ReactNode {
-  // Backend step_complete puts resolved filters under "resolved_detail" (array of ResolvedFilter),
-  // while "resolved" is the raw filter dict from the explore. Fall back defensively.
+  // Backend emits "resolved_detail" (typed array) vs "resolved" (raw dict) -- handle both
   const rawResolved = detail.resolved_detail ?? detail.resolved;
   const resolved = (Array.isArray(rawResolved) ? rawResolved : []) as ResolvedFilter[];
   const rawMandatory = detail.mandatory_detail ?? detail.mandatory;
@@ -550,19 +547,18 @@ const PipelineStep: React.FC<PipelineStepProps> = ({ step, isLast }) => {
   const contentRef = useRef<HTMLDivElement>(null);
   const [contentHeight, setContentHeight] = useState(0);
 
-  // Auto-expand when step becomes active
+  // Reset manual override on status change so auto-expand takes effect
   useEffect(() => {
     if (step.status === 'active') {
-      setManualExpanded(null); // reset manual override so auto-expand works
+      setManualExpanded(null);
     }
   }, [step.status]);
 
-  // Determine effective expanded state
   const isExpandable = step.status === 'complete' || step.status === 'warning' || step.status === 'error';
   const isAutoExpanded = step.status === 'active';
   const isExpanded = manualExpanded !== null ? manualExpanded : (isAutoExpanded || step.expanded);
 
-  // Measure content for animation
+  // Measure content height for smooth max-height animation
   useEffect(() => {
     if (contentRef.current) {
       setContentHeight(contentRef.current.scrollHeight);
@@ -575,7 +571,6 @@ const PipelineStep: React.FC<PipelineStepProps> = ({ step, isLast }) => {
     }
   }, [isExpandable, step.expanded]);
 
-  // Connector line color
   const connectorColor = (): string => {
     if (step.status === 'complete') return colors.stepComplete;
     if (step.status === 'active') return colors.stepActive;
@@ -596,7 +591,7 @@ const PipelineStep: React.FC<PipelineStepProps> = ({ step, isLast }) => {
         minHeight: 38,
       }}
     >
-      {/* Step indicator circle — positioned in the left column */}
+      {/* Step indicator */}
       <div
         style={{
           position: 'absolute',
@@ -607,7 +602,7 @@ const PipelineStep: React.FC<PipelineStepProps> = ({ step, isLast }) => {
         <StepIndicator status={step.status} />
       </div>
 
-      {/* Vertical connector line */}
+      {/* Connector */}
       {!isLast && (
         <div
           style={{
@@ -621,7 +616,7 @@ const PipelineStep: React.FC<PipelineStepProps> = ({ step, isLast }) => {
         />
       )}
 
-      {/* Step header */}
+      {/* Header row */}
       <div
         onClick={handleToggle}
         style={{
@@ -667,7 +662,7 @@ const PipelineStep: React.FC<PipelineStepProps> = ({ step, isLast }) => {
         </div>
       </div>
 
-      {/* Expandable detail content with animated height */}
+      {/* Collapsible detail */}
       <div
         style={{
           overflow: 'hidden',

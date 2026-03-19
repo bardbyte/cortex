@@ -11,7 +11,7 @@ interface EngineeringPanelProps {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Keyframe injection (pulse animation for Processing pill)           */
+/*  Keyframe injection                                                 */
 /* ------------------------------------------------------------------ */
 
 const PULSE_STYLE_ID = 'engineering-panel-keyframes';
@@ -22,7 +22,7 @@ function ensurePulseKeyframes(): void {
   const style = document.createElement('style');
   style.id = PULSE_STYLE_ID;
   style.textContent = `
-    @keyframes cortex-pulse {
+    @keyframes radix-pulse {
       0%, 100% { opacity: 1; }
       50%      { opacity: 0.5; }
     }
@@ -31,7 +31,7 @@ function ensurePulseKeyframes(): void {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Branching Nodes Icon (pipeline trace icon)                         */
+/*  Branching Nodes Icon                                               */
 /* ------------------------------------------------------------------ */
 
 const BranchingNodesIcon: React.FC = () => (
@@ -55,7 +55,6 @@ function derivePanelState(steps: PipelineStepType[], isProcessing: boolean): Pan
   if (steps.some((s) => s.status === 'error')) return 'error';
   if (isProcessing || steps.some((s) => s.status === 'active')) return 'processing';
   if (steps.every((s) => s.status === 'complete' || s.status === 'warning')) {
-    // Only "complete" if at least one step ran
     if (steps.some((s) => s.status === 'complete' || s.status === 'warning')) return 'complete';
   }
   return 'idle';
@@ -83,7 +82,7 @@ const StatePill: React.FC<{ state: PanelState }> = ({ state }) => {
         color: cfg.fg,
         fontFamily: typography.fontPrimary,
         letterSpacing: '0.02em',
-        animation: cfg.animated ? 'cortex-pulse 1.5s ease-in-out infinite' : 'none',
+        animation: cfg.animated ? 'radix-pulse 1.5s ease-in-out infinite' : 'none',
         whiteSpace: 'nowrap',
       }}
     >
@@ -121,7 +120,6 @@ const EngineeringPanel: React.FC<EngineeringPanelProps> = ({
     return `${(ms / 1000).toFixed(1)}s`;
   };
 
-  // Gather per-step confidence values for breakdown
   const confidenceBreakdown = steps
     .filter((s) => s.detail?.confidence !== undefined && (s.status === 'complete' || s.status === 'warning'))
     .map((s) => ({
@@ -142,7 +140,7 @@ const EngineeringPanel: React.FC<EngineeringPanelProps> = ({
         overflow: 'hidden',
       }}
     >
-      {/* ---- Panel Header (52px) ---- */}
+      {/* Header */}
       <div
         style={{
           display: 'flex',
@@ -181,7 +179,7 @@ const EngineeringPanel: React.FC<EngineeringPanelProps> = ({
         </span>
       </div>
 
-      {/* ---- Summary Header (complete state only) ---- */}
+      {/* Summary bar (visible when complete) */}
       {panelState === 'complete' && (
         <div
           style={{
@@ -205,7 +203,7 @@ const EngineeringPanel: React.FC<EngineeringPanelProps> = ({
         </div>
       )}
 
-      {/* ---- Scrollable Step List ---- */}
+      {/* Steps */}
       <div
         style={{
           flex: 1,
@@ -224,7 +222,7 @@ const EngineeringPanel: React.FC<EngineeringPanelProps> = ({
 
       </div>
 
-      {/* ---- Panel Footer (56px) ---- */}
+      {/* Footer: confidence summary */}
       <div
         style={{
           display: 'flex',
@@ -238,7 +236,6 @@ const EngineeringPanel: React.FC<EngineeringPanelProps> = ({
           flexShrink: 0,
         }}
       >
-        {/* Left: overall confidence */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
           <span
             style={{
@@ -266,7 +263,6 @@ const EngineeringPanel: React.FC<EngineeringPanelProps> = ({
           </span>
         </div>
 
-        {/* Right: mini breakdown */}
         {confidenceBreakdown.length > 0 && (
           <div
             style={{

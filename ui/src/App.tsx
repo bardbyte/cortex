@@ -22,7 +22,6 @@ function buildAssistantMessage(pipeline: PipelineState): Message {
   const { done, sql, followUps, action, disambiguate, clarify, filters, entities } =
     pipeline;
 
-  // Derive content based on action
   let content = '';
   if (action === 'disambiguate' && disambiguate) {
     content = disambiguate.message || 'I found multiple matching data sources. Which one fits your question?';
@@ -88,20 +87,18 @@ export default function App() {
     apiUrl: API_URL,
   });
 
-  // Track whether we've already created an assistant message for the current query
   const pendingQueryRef = useRef(false);
   const prevIsProcessingRef = useRef(false);
 
-  // When pipeline transitions from processing to done, create the assistant message
+  // On pipeline completion, synthesize the assistant message from accumulated SSE state
   useEffect(() => {
     if (prevIsProcessingRef.current && !isProcessing && pendingQueryRef.current) {
-      // Pipeline just finished
       pendingQueryRef.current = false;
       if (activeSessionId) {
         const assistantMsg = buildAssistantMessage(pipelineState);
         addMessage(activeSessionId, assistantMsg);
 
-        // Store backend conversation_id for multi-turn context
+        // Persist conversation_id for multi-turn context
         if (pipelineState.done?.conversation_id) {
           setConversationId(activeSessionId, pipelineState.done.conversation_id);
         }
@@ -112,16 +109,13 @@ export default function App() {
 
   const handleSendQuery = useCallback(
     (content: string) => {
-      // Ensure a session exists
       let sessionId = activeSessionId;
       if (!sessionId) {
         sessionId = createSession();
       }
 
-      // Reset pipeline for new query
       reset();
 
-      // Add user message
       const userMsg: Message = {
         id: generateId(),
         role: 'user',
@@ -130,10 +124,8 @@ export default function App() {
       };
       addMessage(sessionId, userMsg);
 
-      // Mark that we're waiting for a result
       pendingQueryRef.current = true;
 
-      // Send backend conversation_id for multi-turn context (if available)
       const session = sessions.find((s) => s.id === sessionId);
       sendQuery(content, session?.conversationId ?? sessionId);
     },
@@ -156,16 +148,13 @@ export default function App() {
   const activeSession = getActiveSession();
   const messages = activeSession?.messages ?? [];
 
-  // Compute engineering panel props from pipeline state
   const overallConfidence = pipelineState.done?.overall_confidence != null
     ? (pipelineState.done.overall_confidence as number)
     : 0;
   const totalDurationMs = pipelineState.done?.total_duration_ms ?? 0;
 
-  // Derive activeStepLabel from pipeline state
   const activeStepLabel = pipelineState.steps.find((s) => s.status === 'active')?.label;
 
-  // Layout styles
   const appContainerStyle: CSSProperties = {
     width: '100vw',
     height: '100vh',
@@ -205,7 +194,7 @@ export default function App() {
     transition: 'flex 250ms ease-out',
   };
 
-  // Track pre-playground view mode so "Back to Cortex" returns to the right mode
+  // Preserve the pre-playground view mode for the "Back" button
   const prevModeRef = useRef<ViewMode>('analyst');
   const handlePlayground = useCallback((mode: ViewMode) => {
     if (mode === 'playground') {

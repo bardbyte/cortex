@@ -1,4 +1,4 @@
-/** Tab 1 — "What is a Metric?" static data */
+/** Mock data for the "What is a Metric?" tab */
 
 export const SAMPLE_ROWS = [
   { cust_ref: 'CUST_0041892', partition_date: '2025-11-15', billed_business: 247.83, generation: 'Millennial' },
@@ -43,5 +43,5 @@ export const ENRICHED_JSON = {
 export const LAYER_TOOLTIPS = {
   layer1: "Raw columns have no meaning to an AI. 'billed_business' as a string is just noise.",
   layer2: "The aggregation rule is the metric formula. But 'total_billed_business' still means nothing to natural language.",
-  layer3: 'Enriched descriptions, synonyms, and required filters are what allow Cortex to map "total spend" to this exact field.',
+  layer3: 'Enriched descriptions, synonyms, and required filters are what allow Radix to map "total spend" to this exact field.',
 };

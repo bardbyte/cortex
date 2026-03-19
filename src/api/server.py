@@ -1,4 +1,4 @@
-"""Cortex API server — FastAPI with SSE-streaming NL2SQL pipeline.
+"""Radix API server — FastAPI with SSE-streaming NL2SQL pipeline.
 
 Endpoints (v1):
   POST /api/v1/query      -- Full pipeline with SSE streaming (new)
@@ -32,20 +32,20 @@ from safechain.tools.mcp import MCPToolLoader, MCPToolAgent
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
 
 from src.retrieval.pipeline import retrieve_with_graph_validation, get_top_explore
-from src.pipeline.orchestrator import CortexOrchestrator, ConversationStore
+from src.pipeline.orchestrator import RadixOrchestrator, ConversationStore
 from config.constants import EXPLORE_DESCRIPTIONS
 
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
-    title="Cortex API",
+    title="Radix API",
     description="NL2SQL pipeline for American Express via Looker semantic layer.",
     version="1.0.0",
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # TODO: restrict to ChatGPT Enterprise domain
+    allow_origins=["*"],  # TODO: restrict to frontend domain
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -58,9 +58,9 @@ _orchestrator = None
 
 
 class ReactAgent:
-    """Lightweight ReAct loop over SafeChain's MCPToolAgent.
+    """ReAct loop over SafeChain's MCPToolAgent.
 
-    Provides the .run(messages) interface CortexOrchestrator expects.
+    Provides the .run(messages) interface RadixOrchestrator expects.
     """
 
     def __init__(self, model_id: str, tools: list, max_iterations: int = 10):
@@ -120,10 +120,9 @@ class ReactAgent:
 
 @app.on_event("startup")
 async def _init_orchestrator():
-    """Initialize the CortexOrchestrator at server startup.
+    """Initialize the RadixOrchestrator at server startup.
 
     Connects to SafeChain, loads MCP tools, creates the ReAct agent.
-    This happens ONCE — the orchestrator is reused across all requests.
     """
     global _orchestrator
 
@@ -137,14 +136,14 @@ async def _init_orchestrator():
         max_iterations=10,
     )
 
-    _orchestrator = CortexOrchestrator(
+    _orchestrator = RadixOrchestrator(
         react_agent=react_agent,
         conversations=ConversationStore(max_turns=20),
         classifier_model_idx="3",
     )
 
     await _orchestrator.warm_up()
-    logger.info("CortexOrchestrator initialized successfully")
+    logger.info("RadixOrchestrator initialized")
 
 
 # ── Request / Response Models ────────────────────────────────────────
@@ -208,7 +207,7 @@ async def query_v1(request: StreamingQueryRequest):
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",  # Disable nginx buffering
+            "X-Accel-Buffering": "no",
         },
     )
 
@@ -242,7 +241,7 @@ async def followup_v1(request: FollowUpRequest):
 
 @app.get("/api/v1/trace/{trace_id}")
 async def get_trace(trace_id: str) -> dict[str, Any]:
-    """Retrieve full PipelineTrace for debugging / eval / Engineering View replay."""
+    """Retrieve full PipelineTrace for debugging and eval."""
     if _orchestrator is None:
         raise HTTPException(status_code=503, detail="Orchestrator not initialized")
 
@@ -253,8 +252,6 @@ async def get_trace(trace_id: str) -> dict[str, Any]:
     return trace.to_dict()
 
 
-# ── Curated starter questions for the welcome screen ──────────────────
-# Mix of easy/medium/hard across explores, validated against 80% coverage doc.
 STARTER_QUESTIONS: list[dict[str, str]] = [
     {
         "text": "What is the total billed business for the OPEN segment?",
@@ -288,7 +285,6 @@ STARTER_QUESTIONS: list[dict[str, str]] = [
     },
 ]
 
-# Per-explore sample questions for the capabilities response.
 _EXPLORE_QUESTIONS: dict[str, list[str]] = {}
 for _q in STARTER_QUESTIONS:
     _EXPLORE_QUESTIONS.setdefault(_q["explore"], []).append(_q["text"])
@@ -296,7 +292,7 @@ for _q in STARTER_QUESTIONS:
 
 @app.get("/api/v1/capabilities")
 def capabilities_v1() -> dict[str, Any]:
-    """Return system capabilities for the frontend."""
+    """Return system capabilities and available explores."""
     explores = []
     for name, desc in EXPLORE_DESCRIPTIONS.items():
         explores.append({
@@ -327,7 +323,7 @@ def capabilities_v1() -> dict[str, Any]:
 
 @app.post("/api/v1/feedback")
 async def feedback(request: FeedbackRequest) -> dict[str, str]:
-    """Log user feedback on query results. Feeds the learning loop."""
+    """Log user feedback on query results for the learning loop."""
     logger.info(
         "Feedback received: trace=%s rating=%s comment=%s",
         request.trace_id, request.rating, request.comment,
@@ -338,7 +334,7 @@ async def feedback(request: FeedbackRequest) -> dict[str, str]:
 
 @app.get("/api/v1/health")
 async def health_v1() -> dict[str, Any]:
-    """Component-level health check."""
+    """Component-level health check across SafeChain, PostgreSQL, and orchestrator."""
     sc_status = _check_safechain()
     pg_status = _check_postgresql()
 
@@ -363,14 +359,14 @@ async def health_v1() -> dict[str, Any]:
 
 @app.post("/query")
 def query(request: QueryRequest) -> dict[str, Any]:
-    """[V0] Run retrieval pipeline and return top explore with filters."""
+    """[V0] Retrieval-only endpoint (no SQL generation)."""
     result = retrieve_with_graph_validation(request.query, top_k=request.top_k)
     return get_top_explore(result)
 
 
 @app.get("/health")
 async def health() -> HealthResponse:
-    """[V0] Health check — verifies SafeChain and PostgreSQL connectivity."""
+    """[V0] Simple health check."""
     sc_status = _check_safechain()
     pg_status = _check_postgresql()
     overall = "ok" if all(s == "ok" for s in [sc_status, pg_status]) else "degraded"
@@ -379,7 +375,7 @@ async def health() -> HealthResponse:
 
 @app.get("/capabilities")
 def capabilities() -> dict[str, Any]:
-    """[V0] Return system capabilities for the frontend."""
+    """[V0] Basic capabilities."""
     return {
         "version": "1.0.0",
         "mode": "full_pipeline",

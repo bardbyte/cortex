@@ -10,7 +10,6 @@ export default function HowAIUsesIt() {
   const timerRefs = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   const startTrace = () => {
-    // Reset
     setExpandedSteps(new Set());
     timerRefs.current.forEach(clearTimeout);
     timerRefs.current = [];
@@ -106,7 +105,6 @@ export default function HowAIUsesIt() {
 
         return (
           <div key={step.number}>
-            {/* Connector line */}
             {idx > 0 && (
               <div style={{
                 width: '2px',
@@ -117,7 +115,6 @@ export default function HowAIUsesIt() {
               }} />
             )}
 
-            {/* Step card */}
             <div
               style={{
                 border: `1px solid ${isExpanded ? '#006FCF' : colors.borderDefault}`,
@@ -129,7 +126,6 @@ export default function HowAIUsesIt() {
               }}
               onClick={() => toggleStep(step.number)}
             >
-              {/* Header */}
               <div style={{
                 display: 'flex', alignItems: 'center', gap: '12px', padding: '16px 20px',
               }}>
@@ -155,7 +151,6 @@ export default function HowAIUsesIt() {
                 </svg>
               </div>
 
-              {/* Expanded content */}
               <div style={{
                 maxHeight: isExpanded ? '1000px' : '0',
                 overflow: 'hidden',
@@ -163,7 +158,6 @@ export default function HowAIUsesIt() {
               }}>
                 <div style={{ padding: '0 20px 20px', borderTop: `1px solid ${colors.borderDefault}` }}>
                   <div style={{ paddingTop: '16px' }}>
-                    {/* Score bars for step 1 */}
                     {step.matches && (
                       <div style={{ marginBottom: '16px' }}>
                         <div style={{ fontSize: '12px', fontWeight: 600, color: colors.textSecondary, textTransform: 'uppercase', marginBottom: '8px' }}>
@@ -178,11 +172,9 @@ export default function HowAIUsesIt() {
                       </div>
                     )}
 
-                    {/* Code/content block */}
                     {step.number === 4 ? (
                       <>
                         <div style={codeStyle}>{step.content}</div>
-                        {/* Results table */}
                         <table style={{
                           width: '100%', borderCollapse: 'collapse', marginTop: '16px',
                           fontSize: '13px', fontFamily: typography.fontMono,
@@ -213,7 +205,6 @@ export default function HowAIUsesIt() {
                       </div>
                     ) : null}
 
-                    {/* Highlight note */}
                     {step.highlight && (
                       <div style={step.number === 3 ? amberNoteStyle : highlightNoteStyle}>
                         {step.highlight}
@@ -257,7 +248,7 @@ export default function HowAIUsesIt() {
           lineHeight: '1.6',
           marginTop: '16px',
         }}>
-          What Cortex would have returned:
+          What Radix would have returned:
           <br />
           <br />
           "{NO_ENRICHMENT_CALLOUT.fallback_response}"

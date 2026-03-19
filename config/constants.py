@@ -1,4 +1,4 @@
-"""Constants for the Cortex retrieval pipeline."""
+"""Constants for the Radix retrieval pipeline."""
 
 import os
 
@@ -8,7 +8,6 @@ load_dotenv(find_dotenv())
 
 
 def _get_required_env(var_name: str) -> str:
-    """Get required environment variable, raise error if missing."""
     value = os.getenv(var_name)
     if value is None or value.strip() == "":
         raise ValueError(f"Required environment variable '{var_name}' is not set.")
@@ -16,18 +15,12 @@ def _get_required_env(var_name: str) -> str:
 
 
 # ─── Model Indices (from config.yml) ─────────────────────────────────
-# Model "1" = Gemini 2.5 Pro (LLM for entity extraction)
-# Model "2" = BGE-large-en-v1.5 (embedding for vector search, 1024-dim)
-LLM_MODEL_IDX = '1'
-EMBED_MODEL_IDX = '2'
+LLM_MODEL_IDX = '1'    # Gemini 2.5 Pro
+EMBED_MODEL_IDX = '2'  # BGE-large-en-v1.5 (1024-dim)
 
-# Default Looker model allowlist
 DEFAULT_REQUIRED_LOOKER_MODELS = ["proj-d-lumi-gpt"]
 
-# Explore → Base View mapping (from LookML model `from:` declarations)
-# Used for explore scoring: fields from an explore's base view get a strong bonus
-# because the explore was DESIGNED to analyze that view's data.
-# Fields reachable only via JOINs are secondary.
+# Fields from an explore's base view get a scoring bonus over JOIN-reachable fields
 EXPLORE_BASE_VIEWS = {
     "finance_cardmember_360": "custins_customer_insights_cardmember",
     "finance_merchant_profitability": "fin_card_member_merchant_profitability",
@@ -36,8 +29,7 @@ EXPLORE_BASE_VIEWS = {
     "finance_customer_risk": "risk_indv_cust",
 }
 
-# Explore descriptions from LookML model — used for tiebreaking when
-# base_view_bonus can't discriminate (e.g., all entities from joined views)
+# Used for tiebreaking when base_view_bonus can't discriminate
 EXPLORE_DESCRIPTIONS = {
     "finance_cardmember_360": "Comprehensive card member view combining customer activity (billed business, active status, tenure), demographics (generation, card type), risk indicators (revolve index), and organizational context. Use for segmentation, portfolio health, and cross-dimensional analysis.",
     "finance_merchant_profitability": "Analyze card member spending by merchant category, Return on Capital (ROC) metrics, and dining behavior. Join with demographics for segmented profitability analysis.",
@@ -46,11 +38,9 @@ EXPLORE_DESCRIPTIONS = {
     "finance_customer_risk": "Analyze customer risk indicators including revolve index (proportion of revolving accounts) and risk rankings. Join with demographics for risk segmentation by generation and card type.",
 }
 
-# Minimum cosine similarity for a base-view match to count toward the bonus.
-# Prevents low-quality vector matches from getting boosted by structural signal.
+# Prevents low-quality vector matches from getting boosted by structural signal
 SIMILARITY_FLOOR = 0.65
 
-# PostgreSQL connection values from .env
 POSTGRES_HOST = _get_required_env("POSTGRES_HOST")
 POSTGRES_PORT = int(_get_required_env("POSTGRES_PORT"))
 POSTGRES_DBNAME = _get_required_env("POSTGRES_DBNAME")
@@ -58,8 +48,7 @@ POSTGRES_USER = _get_required_env("POSTGRES_USER")
 POSTGRES_PASSWORD = _get_required_env("POSTGRES_PASSWORD")
 
 # ─── BGE Embedding Configuration ─────────────────────────────────────
-# BGE-large-en-v1.5 was trained with asymmetric instructions.
-# Queries MUST use this prefix; documents do NOT.
+# BGE requires asymmetric query prefix; documents are embedded without prefix
 BGE_QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
 
 # ─── SQL: Schema Setup ───────────────────────────────────────────────
@@ -133,7 +122,6 @@ ORDER BY embedding <=> CAST(:embedding AS vector)
 LIMIT :limit;
 """
 
-# Field-type filtered search — search only measures or only dimensions
 SQL_SEARCH_SIMILAR_FIELDS_BY_TYPE = """
 SELECT
     field_key,
@@ -185,9 +173,7 @@ WHERE explore_name = :explore_name
   AND NOT is_hidden;
 """
 
-# GAP 1: Check which explores contain dimensions matching filter field_hints.
-# Used to compute filter_penalty BEFORE explore selection (not after).
-# field_patterns are ILIKE patterns like ['%generation%', '%card_type%'].
+# Compute filter_penalty before explore selection, not after
 SQL_CHECK_FILTER_FIELDS_IN_EXPLORES = """
 SELECT explore_name, field_name
 FROM explore_field_index
